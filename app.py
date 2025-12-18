@@ -9,7 +9,7 @@ import os
 st.set_page_config(page_title="Sentinela Fiscal Pro", layout="wide")
 st.title("🛡️ Sentinela: Auditoria Fiscal (ICMS & IPI)")
 
-# --- 1. CARREGAR BASES MESTRE + TIPI (COM BUSCA EM SUBPASTAS) ---
+# --- 1. CARREGAR BASES MESTRE + TIPI (CORRIGIDO E BLINDADO) ---
 @st.cache_data
 def carregar_bases_mestre():
     # A. Bases Internas
@@ -23,18 +23,17 @@ def carregar_bases_mestre():
     else:
         return None, None, None, None
 
-    # B. TIPI (Lógica Sherlock Holmes 2.0 - Procura em pastas ocultas)
+    # B. TIPI (Procura em pastas ocultas e limpa erros de NaN)
     df_tipi = pd.DataFrame()
     
-    # Lista de lugares onde o arquivo pode estar escondido
+    # Locais possíveis (Raiz ou Pasta .streamlit)
     locais_possiveis = [
-        "TIPI.xlsx", "tipi.xlsx", "Tipi.xlsx",           # Pasta Raiz
-        ".streamlit/TIPI.xlsx", ".streamlit/tipi.xlsx"   # Pasta .streamlit (Onde está no seu print)
+        "TIPI.xlsx", "tipi.xlsx", "Tipi.xlsx",
+        ".streamlit/TIPI.xlsx", ".streamlit/tipi.xlsx"
     ]
     
     caminho_encontrado = None
     
-    # Testa cada caminho até achar
     for caminho in locais_possiveis:
         if os.path.exists(caminho):
             caminho_encontrado = caminho
@@ -42,32 +41,37 @@ def carregar_bases_mestre():
     
     if caminho_encontrado:
         try:
-            # Lê o arquivo encontrado
+            # Lê forçando texto
             df_raw = pd.read_excel(caminho_encontrado, dtype=str)
             
-            # --- LÓGICA DE EXTRAÇÃO ---
-            # Assume Coluna A = NCM, Coluna B = Alíquota
+            # Pega as duas primeiras colunas
             df_tipi = df_raw.iloc[:, [0, 1]].copy()
             df_tipi.columns = ['NCM', 'ALIQ']
             
-            # Limpeza Blindada
-            df_tipi['NCM'] = df_tipi['NCM'].str.replace(r'\D', '', regex=True) # Só números
-            df_tipi['NCM'] = df_tipi['NCM'].str.zfill(8) # Garante 8 dígitos (0101...)
+            # --- LIMPEZA BLINDADA (CORREÇÃO DO ERRO) ---
+            # 1. Remove linhas que estão totalmente vazias
+            df_tipi = df_tipi.dropna(how='all')
             
-            df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
+            # 2. Garante que NCM é string, remove não números
+            df_tipi['NCM'] = df_tipi['NCM'].astype(str).str.replace(r'\D', '', regex=True)
             
-            # Filtra apenas o que é NCM válido (8 dígitos)
-            df_tipi = df_tipi[df_tipi['NCM'].str.match(r'^\d{8}$')]
+            # 3. Zeros à esquerda
+            df_tipi['NCM'] = df_tipi['NCM'].str.zfill(8)
             
-            # Aviso visual discreto de sucesso
+            # 4. Limpa Alíquota
+            df_tipi['ALIQ'] = df_tipi['ALIQ'].astype(str).str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
+            
+            # 5. O FILTRO QUE DAVA ERRO (Agora com na=False)
+            # O 'na=False' impede o erro "Cannot mask with non-boolean array"
+            df_tipi = df_tipi[df_tipi['NCM'].str.match(r'^\d{8}$', na=False)]
+            
             print(f"Sucesso: TIPI carregada de {caminho_encontrado}")
             
         except Exception as e:
             st.error(f"Erro ao ler o arquivo {caminho_encontrado}: {e}")
             df_tipi = pd.DataFrame()
     else:
-        # Se não achou em lugar nenhum
-        st.warning(f"⚠️ Não encontrei 'tipi.xlsx' nem na raiz nem na pasta .streamlit.")
+        st.warning(f"⚠️ Não encontrei 'tipi.xlsx'.")
 
     return df_gerencial, df_tribut, df_inter, df_tipi, caminho_encontrado
 
@@ -123,11 +127,10 @@ def extrair_tags_completo(xml_content):
 with st.sidebar:
     st.header("📂 Upload Central")
     
-    # Mostra onde achou o arquivo para confirmar
-    if camino_encontrado:
+    if caminho_encontrado:
         st.success(f"TIPI carregada de: {caminho_encontrado}")
     else:
-        st.error("TIPI não encontrada. Verifique se o arquivo existe.")
+        st.error("TIPI não encontrada.")
 
     xml_saidas = st.file_uploader("1. Notas de SAÍDA", accept_multiple_files=True, type='xml')
     xml_entradas = st.file_uploader("2. Notas de ENTRADA", accept_multiple_files=True, type='xml')
@@ -174,7 +177,7 @@ if (xml_saidas or xml_entradas) and rel_status:
         if not df_tipi.empty:
             map_tipi = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
         else:
-            st.warning("⚠️ TIPI vazia ou não carregada.")
+            st.warning("⚠️ TIPI não carregada corretamente.")
 
         # === ICMS ===
         df_icms = df_s.copy()
