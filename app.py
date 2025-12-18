@@ -9,7 +9,7 @@ import os
 st.set_page_config(page_title="Sentinela Fiscal Pro", layout="wide")
 st.title("🛡️ Sentinela: Auditoria Fiscal (ICMS & IPI)")
 
-# --- 1. CARREGAR BASES MESTRE + TIPI (MODO EMERGÊNCIA) ---
+# --- 1. CARREGAR BASES MESTRE + TIPI (MODO LITERAL) ---
 @st.cache_data
 def carregar_bases_mestre():
     # A. Bases Internas
@@ -23,47 +23,42 @@ def carregar_bases_mestre():
     else:
         return None, None, None, None
 
-    # B. TIPI Oficial (Lógica Direta Coluna A e B)
+    # B. TIPI Oficial (Leitura Direta e Literal)
     caminho_tipi = "TIPI.xlsx"
     df_tipi = pd.DataFrame()
     
     if os.path.exists(caminho_tipi):
         try:
-            # Lê o Excel ignorando cabeçalho (header=None) e forçando tudo como texto
-            # O engine='openpyxl' é o padrão para xlsx, garantindo compatibilidade
-            df_raw = pd.read_excel(caminho_tipi, header=None, dtype=str, engine='openpyxl')
+            # Lê o Excel forçando texto. Header=0 assume que a linha 1 é título.
+            # Se não tiver título, use header=None. Vamos assumir que pode ter título.
+            df_raw = pd.read_excel(caminho_tipi, dtype=str)
             
-            # ESTRATÉGIA: Filtrar linhas onde a COLUNA 0 (A) parece um NCM com pontos
-            # Regex: 4 digitos + ponto + 2 digitos + ponto + 2 digitos (Ex: 0101.21.00)
-            mask_ncm = df_raw.iloc[:, 0].str.contains(r'^\d{4}\.\d{2}\.\d{2}', regex=True, na=False)
+            # Pega as duas primeiras colunas, não importa o nome delas
+            df_tipi = df_raw.iloc[:, [0, 1]].copy()
+            df_tipi.columns = ['NCM', 'ALIQ'] # Renomeia na marra
             
-            # Aplica o filtro
-            df_tipi = df_raw[mask_ncm].copy()
+            # --- LIMPEZA BLINDADA ---
+            # 1. Remove pontos, traços e espaços
+            df_tipi['NCM'] = df_tipi['NCM'].str.replace(r'\D', '', regex=True)
             
-            # Se achou dados
-            if not df_tipi.empty:
-                # Pega Coluna A (0) como NCM e Coluna B (1) como Alíquota
-                # Se a alíquota estiver na coluna C, mude o [0, 1] para [0, 2] abaixo
-                df_tipi = df_tipi.iloc[:, [0, 1]] 
-                df_tipi.columns = ['NCM', 'ALIQ']
-                
-                # Limpeza: Tira pontos do NCM e trata a Alíquota
-                df_tipi['NCM'] = df_tipi['NCM'].str.replace('.', '', regex=False).str.strip()
-                df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
-            else:
-                # DEBUG: Se não achou com pontos, tenta achar sem pontos (apenas 8 digitos)
-                mask_ncm_sem_ponto = df_raw.iloc[:, 0].str.match(r'^\d{8}$', na=False)
-                df_tipi = df_raw[mask_ncm_sem_ponto].copy()
-                if not df_tipi.empty:
-                    df_tipi = df_tipi.iloc[:, [0, 1]]
-                    df_tipi.columns = ['NCM', 'ALIQ']
-                    df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
-                else:
-                    st.error("Erro: O arquivo TIPI.xlsx foi lido, mas não encontrei códigos NCM na Coluna A.")
-
+            # 2. CORREÇÃO VITAL: Adiciona zero à esquerda se o Excel comeu
+            # Ex: Transforma "1012100" (7 dig) em "01012100" (8 dig)
+            df_tipi['NCM'] = df_tipi['NCM'].str.zfill(8)
+            
+            # 3. Limpa Alíquota (NT -> 0, vírgula -> ponto)
+            df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
+            
+            # 4. Remove linhas vazias ou cabeçalhos repetidos que sobraram
+            # Garante que NCM é numérico e Alíquota é numérico
+            df_tipi = df_tipi[df_tipi['NCM'].str.match(r'^\d{8}$')]
+            
         except Exception as e:
-            st.error(f"Erro fatal ao ler TIPI.xlsx: {e}")
+            st.error(f"Erro ao ler TIPI.xlsx: {e}")
             df_tipi = pd.DataFrame()
+    else:
+        # Tenta ler com minúsculo caso o nome no github esteja diferente
+        if os.path.exists("tipi.xlsx"):
+             st.warning("Aviso: O arquivo está como 'tipi.xlsx' mas o código busca 'TIPI.xlsx'. Renomeie no GitHub.")
 
     return df_gerencial, df_tribut, df_inter, df_tipi
 
@@ -97,7 +92,6 @@ def extrair_tags_completo(xml_content):
             "NCM": prod.find('nfe:NCM', ns).text if prod is not None else "",
             "CFOP": prod.find('nfe:CFOP', ns).text if prod is not None else "",
             "vProd": float(prod.find('nfe:vProd', ns).text) if prod is not None else 0.0,
-            # ICMS
             "CST ICMS": imposto.find('.//nfe:CST', ns).text if imposto.find('.//nfe:CST', ns) is not None else "",
             "BC ICMS": float(imposto.find('.//nfe:vBC', ns).text) if imposto.find('.//nfe:vBC', ns) is not None else 0.0,
             "Alq ICMS": float(imposto.find('.//nfe:pICMS', ns).text) if imposto.find('.//nfe:pICMS', ns) is not None else 0.0,
@@ -143,7 +137,7 @@ if (xml_saidas or xml_entradas) and rel_status:
     if not df_s.empty:
         df_s['AP'] = df_s['Chave de Acesso'].str.replace(r'\D', '', regex=True).map(status_dict).fillna("Pendente")
         
-        # Carregar Mapas
+        # Mapas
         map_tribut_cst = {}
         map_tribut_aliq = {}
         map_gerencial_cst = {}
@@ -159,10 +153,10 @@ if (xml_saidas or xml_entradas) and rel_status:
             map_inter = dict(zip(df_inter.iloc[:, 0].astype(str), df_inter.iloc[:, 1].astype(str)))
         
         # Mapeamento TIPI
-        if not df_tipi.empty and 'NCM' in df_tipi.columns:
+        if not df_tipi.empty:
             map_tipi = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
         else:
-            st.warning("⚠️ TIPI não carregada corretamente.")
+            st.warning("⚠️ TIPI não carregada. Confirme se o arquivo TIPI.xlsx está no GitHub.")
 
         # === ICMS ===
         df_icms = df_s.copy()
