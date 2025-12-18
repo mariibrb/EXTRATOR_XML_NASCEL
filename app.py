@@ -33,15 +33,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR (CORRIGIDO O CAMINHO DA IMAGEM) ---
+# --- 2. SIDEBAR (LOGO NASCEL) ---
 with st.sidebar:
-    # AJUSTE CRÍTICO: Caminho atualizado conforme sua pasta .streamlit
     caminho_logo = ".streamlit/nascel sem fundo.png"
     
     if os.path.exists(caminho_logo):
         st.image(caminho_logo, use_column_width=True)
     else:
-        # Tenta na raiz caso você mova o arquivo depois
+        # Tenta na raiz como fallback
         if os.path.exists("nascel sem fundo.png"):
             st.image("nascel sem fundo.png", use_column_width=True)
         else:
@@ -50,18 +49,23 @@ with st.sidebar:
     st.markdown("---")
     st.info("💡 **Dica:** Carregue os arquivos nas caixas ao centro para iniciar.")
 
-# --- 3. ÁREA PRINCIPAL ---
+# --- 3. ÁREA PRINCIPAL (NOVO TÍTULO SENTINELA) ---
 
-# Verifica se existe o banner, senão usa texto
-if os.path.exists("sentinela_banner.png"):
-    col_spacer1, col_img, col_spacer2 = st.columns([1, 4, 1])
-    with col_img:
-        st.image("sentinela_banner.png", use_column_width=True)
+# Caminho da nova imagem gerada (sem fundo)
+caminho_titulo = ".streamlit/Sentinela.png"
+
+if os.path.exists(caminho_titulo):
+    # Centralizando a imagem do título usando colunas
+    # Ajustei as proporções para a imagem ficar num tamanho bom no topo
+    col_c1, col_tit, col_c2 = st.columns([1, 8, 1])
+    with col_tit:
+        st.image(caminho_titulo, use_column_width=True)
 else:
+    # Fallback caso a imagem não seja encontrada na pasta .streamlit
     st.markdown("<h1 style='text-align: center; color: #FF6F00; font-size: 3em;'>SENTINELA</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #666;'>Sistema de Auditoria Fiscal</h3>", unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br><br>", unsafe_allow_html=True) # Espaço extra após o título
 
 # --- ÁREA DE UPLOAD ---
 col_ent, col_sai = st.columns(2, gap="large")
@@ -80,14 +84,13 @@ with col_sai:
     up_sai_aut = st.file_uploader("🔍 Relatório Autenticidade (Sefaz)", type=['xlsx', 'csv'], key="sai_aut")
     up_sai_ger = st.file_uploader("⚙️ Regras Gerenciais (Opcional)", type=['xlsx'], key="sai_ger")
 
-# --- 4. LÓGICA DO SISTEMA (BASES CORRIGIDAS) ---
+# --- 4. LÓGICA DO SISTEMA (BASES) ---
 
 @st.cache_data
 def carregar_bases():
     bases = {"TIPI": {}, "PC": {}}
     
-    # AJUSTE CRÍTICO: Caminhos atualizados para buscar dentro da pasta .streamlit
-    # Lista de locais possíveis para o TIPI
+    # TIPI
     locais_tipi = [".streamlit/tipi.xlsx", "tipi.xlsx"]
     for local in locais_tipi:
         if os.path.exists(local):
@@ -97,14 +100,12 @@ def carregar_bases():
                 break
             except: pass
 
-    # Lista de locais possíveis para o PIS/COFINS (Nome corrigido conforme seu print)
+    # PIS/COFINS
     locais_pc = [".streamlit/CST_Pis_Cofins.xlsx", "CST_Pis_Cofins.xlsx"]
     for local in locais_pc:
         if os.path.exists(local):
             try:
-                # Ajuste conforme estrutura do seu arquivo CST_Pis_Cofins
                 d = pd.read_excel(local, dtype=str)
-                # Assumindo NCM na col 0 e CST Saída na col 2 (ajuste se necessário)
                 if d.shape[1] >= 3:
                     bases["PC"] = dict(zip(d.iloc[:,0].str.replace(r'\D','',regex=True), d.iloc[:,2]))
                 break
