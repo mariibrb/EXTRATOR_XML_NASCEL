@@ -7,7 +7,7 @@ import os
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Sentinela Fiscal Pro", layout="wide")
-st.title("🛡️ Sentinela: Auditoria Completa (ICMS + IPI)")
+st.title("🛡️ Sentinela: Auditoria Fiscal (ICMS & IPI)")
 
 # --- 1. CARREGAR BASES MESTRE + TIPI ---
 @st.cache_data
@@ -23,18 +23,18 @@ def carregar_bases_mestre():
     else:
         return None, None, None, None
 
-    # B. TIPI Oficial (Lê arquivo original da Receita)
+    # B. TIPI Oficial (Lê arquivo original da Receita no GitHub)
     caminho_tipi = "TIPI.xlsx"
     df_tipi = pd.DataFrame()
     if os.path.exists(caminho_tipi):
         try:
-            # Lê sem cabeçalho para não perder dados e usa Regex para achar NCMs
+            # Lê sem cabeçalho e usa Regex para achar linhas de NCM (ex: 1234.56.78)
             df_raw = pd.read_excel(caminho_tipi, header=None, dtype=str)
             mask_ncm = df_raw.iloc[:, 0].str.contains(r'^\d{4}\.\d{2}\.\d{2}', regex=True, na=False)
             df_tipi = df_raw[mask_ncm].copy()
             
-            # Pega Coluna 0 (NCM) e Coluna 1 ou 2 (Alíquota - ajustável conforme layout)
-            # Geralmente NCM é A(0) e Alíquota é B(1). Se der erro, mude para [0, 2]
+            # Pega Coluna 0 (NCM) e Coluna 1 ou 2 (Alíquota - ajustável)
+            # Geralmente NCM é coluna A(0) e Alíquota B(1) ou C(2). Ajustado para [0, 1] padrão.
             df_tipi = df_tipi.iloc[:, [0, 1]]
             df_tipi.columns = ['NCM', 'ALIQ']
             
@@ -48,7 +48,7 @@ def carregar_bases_mestre():
 
 df_gerencial, df_tribut, df_inter, df_tipi = carregar_bases_mestre()
 
-# --- 2. EXTRAÇÃO XML (COM CAMPOS DE IPI) ---
+# --- 2. EXTRAÇÃO XML ---
 def extrair_tags_completo(xml_content):
     ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
     try: root = ET.fromstring(xml_content)
@@ -95,7 +95,7 @@ def extrair_tags_completo(xml_content):
 
 # --- 3. INTERFACE ---
 with st.sidebar:
-    st.header("📂 Upload Central")
+    st.header("📂 Upload")
     xml_saidas = st.file_uploader("1. Notas de SAÍDA", accept_multiple_files=True, type='xml')
     xml_entradas = st.file_uploader("2. Notas de ENTRADA", accept_multiple_files=True, type='xml')
     rel_status = st.file_uploader("3. Status Sefaz", type=['xlsx', 'csv'])
@@ -106,7 +106,7 @@ if (xml_saidas or xml_entradas) and rel_status:
     df_st_rel = pd.read_excel(rel_status, dtype=str) if rel_status.name.endswith('.xlsx') else pd.read_csv(rel_status, dtype=str)
     status_dict = dict(zip(df_st_rel.iloc[:, 0].str.replace(r'\D', '', regex=True), df_st_rel.iloc[:, 5]))
 
-    # Extrair
+    # Extrair XMLs
     list_s = []
     for f in xml_saidas: list_s.extend(extrair_tags_completo(f.read()))
     df_s = pd.DataFrame(list_s)
@@ -118,18 +118,16 @@ if (xml_saidas or xml_entradas) and rel_status:
     if not df_s.empty:
         df_s['AP'] = df_s['Chave de Acesso'].str.replace(r'\D', '', regex=True).map(status_dict).fillna("Pendente")
         
-        # --- AUDITORIA ---
+        # --- CARREGAR MAPAS ---
         map_tribut_cst = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 2].astype(str)))
         map_tribut_aliq = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 3].astype(str)))
         map_gerencial_cst = dict(zip(df_gerencial.iloc[:, 0].astype(str), df_gerencial.iloc[:, 1].astype(str)))
         map_inter = dict(zip(df_inter.iloc[:, 0].astype(str), df_inter.iloc[:, 1].astype(str)))
-        
-        # Mapa TIPI (NCM -> Alíquota)
         map_tipi = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
 
+        # === ABA 3: ICMS (Foco em CST e Alíquota ICMS) ===
         df_icms = df_s.copy()
-
-        # 1. Análise CST ICMS
+        
         def f_analise_cst(row):
             status, cst, ncm = str(row['AP']), str(row['CST ICMS']).strip(), str(row['NCM']).strip()
             if "Cancelamento" in status: return "NF cancelada"
@@ -138,7 +136,6 @@ if (xml_saidas or xml_entradas) and rel_status:
             if map_gerencial_cst.get(ncm) == "60" and cst != "60": return f"Divergente — CST informado: {cst} | Esperado: 60"
             return "Correto" if cst == cst_esp else f"Divergente — CST informado: {cst} | Esperado: {cst_esp}"
 
-        # 2. CST x BC
         def f_cst_bc(row):
             if "Cancelamento" in str(row['AP']): return "NF Cancelada"
             cst, v_p, bc = str(row['CST ICMS']), row['vProd'], row['BC ICMS']
@@ -149,7 +146,6 @@ if (xml_saidas or xml_entradas) and rel_status:
             if cst in ["90", "99"] and row['ICMS'] == 0: msgs.append("Sem destaque ICMS")
             return "; ".join(msgs) if msgs else "Correto"
 
-        # 3. Análise Alíquota ICMS
         def f_aliq(row):
             if "Cancelamento" in str(row['AP']): return "NF Cancelada"
             ncm, uf_e, uf_d, aliq_xml = str(row['NCM']), row['UF Emit'], row['UF Dest'], row['Alq ICMS']
@@ -159,13 +155,10 @@ if (xml_saidas or xml_entradas) and rel_status:
             else:
                 esp = map_inter.get(uf_d)
                 if not esp: return "UF Destino não encontrada"
-            
             try: esp_val = float(str(esp).replace(',', '.'))
-            except: return "Erro no valor esperado"
-            
+            except: return "Erro valor esperado"
             return "Correto" if abs(aliq_xml - esp_val) < 0.1 else f"Destacado: {aliq_xml} | Esperado: {esp_val}"
 
-        # 4. Complemento Financeiro
         def f_complemento(row):
             analise = str(row['Analise Aliq ICMS'])
             if "Destacado" in analise:
@@ -176,37 +169,44 @@ if (xml_saidas or xml_entradas) and rel_status:
                 except: return 0.0
             return 0.0
 
-        # 5. NOVO: Análise IPI (Conforme sua fórmula)
+        # Aplica fórmulas ICMS
+        df_icms['Análise CST ICMS'] = df_icms.apply(f_analise_cst, axis=1)
+        df_icms['CST x BC'] = df_icms.apply(f_cst_bc, axis=1)
+        df_icms['Analise Aliq ICMS'] = df_icms.apply(f_aliq, axis=1)
+        df_icms['Complemento ICMS Próprio'] = df_icms.apply(f_complemento, axis=1)
+
+
+        # === ABA 4: IPI (Foco exclusivo em TIPI) ===
+        df_ipi = df_s.copy()
+
         def f_analise_ipi(row):
             if "Cancelamento" in str(row['AP']): return "NF Cancelada"
             ncm, aliq_xml = str(row['NCM']).strip(), row['Aliq IPI']
             
-            # Busca na TIPI (pelo arquivo que você subiu)
+            # Busca na TIPI (lida do GitHub)
             esp = map_tipi.get(ncm)
             if esp is None: return "NCM não encontrado na TIPI"
             
             try: esp_val = float(str(esp).replace(',', '.'))
             except: return "Erro leitura TIPI"
 
-            # Compara com tolerância de 0.1
+            # Compara
             if abs(aliq_xml - esp_val) < 0.1:
                 return "Correto"
             else:
                 return f"Destacado: {aliq_xml} | Esperado: {esp_val}"
 
-        # Aplicar
-        df_icms['Análise CST ICMS'] = df_icms.apply(f_analise_cst, axis=1)
-        df_icms['CST x BC'] = df_icms.apply(f_cst_bc, axis=1)
-        df_icms['Analise Aliq ICMS'] = df_icms.apply(f_aliq, axis=1)
-        df_icms['Complemento ICMS Próprio'] = df_icms.apply(f_complemento, axis=1)
-        df_icms['Análise IPI'] = df_icms.apply(f_analise_ipi, axis=1) # Nova Coluna
+        # Aplica fórmula IPI
+        df_ipi['Análise IPI'] = df_ipi.apply(f_analise_ipi, axis=1)
 
-    # --- DOWNLOAD ---
+
+    # --- EXPORTAÇÃO ---
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         if not df_e.empty: df_e.to_excel(writer, index=False, sheet_name='Entradas')
         if not df_s.empty: df_s.to_excel(writer, index=False, sheet_name='Saídas')
         if not df_s.empty: df_icms.to_excel(writer, index=False, sheet_name='ICMS')
+        if not df_s.empty: df_ipi.to_excel(writer, index=False, sheet_name='IPI')
 
-    st.success("✅ Auditoria Completa (ICMS + IPI) finalizada!")
+    st.success("✅ Auditoria Completa: Abas de Entradas, Saídas, ICMS e IPI geradas!")
     st.download_button("📥 Baixar Sentinela Auditada", buffer.getvalue(), "Sentinela_Auditada_Final.xlsx")
