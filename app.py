@@ -3,8 +3,8 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import io
 
-st.set_page_config(page_title="Sentinela - Power Query Python", layout="wide")
-st.title("📑 Extração Bruta para Base_XML (Padrão Power Query)")
+st.set_page_config(page_title="Sentinela - Auditoria AP", layout="wide")
+st.title("🛡️ Sentinela: Extração + Auditoria de Status (Coluna AP)")
 
 def extrair_tags_estilo_query(xml_content):
     ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
@@ -20,12 +20,10 @@ def extrair_tags_estilo_query(xml_content):
     dest = root.find('.//nfe:dest', ns)
 
     itens_extraidos = []
-    
     for det in root.findall('.//nfe:det', ns):
         prod = det.find('nfe:prod', ns)
         imposto = det.find('nfe:imposto', ns)
         
-        # Dicionário com as colunas EXATAS que você pediu
         registro = {
             "Natureza Operação": ide.find('nfe:natOp', ns).text if ide is not None else "",
             "Número NF": ide.find('nfe:nNF', ns).text if ide is not None else "",
@@ -58,40 +56,4 @@ def extrair_tags_estilo_query(xml_content):
             "Aliq IPI": float(imposto.find('.//nfe:IPI//nfe:pIPI', ns).text) if imposto.find('.//nfe:IPI//nfe:pIPI', ns) is not None else 0.0,
             "IPI": float(imposto.find('.//nfe:IPI//nfe:vIPI', ns).text) if imposto.find('.//nfe:IPI//nfe:vIPI', ns) is not None else 0.0,
             "CST PIS": imposto.find('.//nfe:PIS//nfe:CST', ns).text if imposto.find('.//nfe:PIS//nfe:CST', ns) is not None else "",
-            "BC PIS": float(imposto.find('.//nfe:PIS//nfe:vBC', ns).text) if imposto.find('.//nfe:PIS//nfe:vBC', ns) is not None else 0.0,
-            "Aliq PIS": float(imposto.find('.//nfe:PIS//nfe:pPIS', ns).text) if imposto.find('.//nfe:PIS//nfe:pPIS', ns) is not None else 0.0,
-            "PIS": float(imposto.find('.//nfe:PIS//nfe:vPIS', ns).text) if imposto.find('.//nfe:PIS//nfe:vPIS', ns) is not None else 0.0,
-            "CST COFINS": imposto.find('.//nfe:COFINS//nfe:CST', ns).text if imposto.find('.//nfe:COFINS//nfe:CST', ns) is not None else "",
-            "BC COFINS": float(imposto.find('.//nfe:COFINS//nfe:vBC', ns).text) if imposto.find('.//nfe:COFINS//nfe:vBC', ns) is not None else 0.0,
-            "Aliq COFINS": float(imposto.find('.//nfe:COFINS//nfe:pCOFINS', ns).text) if imposto.find('.//nfe:COFINS//nfe:pCOFINS', ns) is not None else 0.0,
-            "COFINS": float(imposto.find('.//nfe:COFINS//nfe:vCOFINS', ns).text) if imposto.find('.//nfe:COFINS//nfe:vCOFINS', ns) is not None else 0.0,
-            "FCP": float(imposto.find('.//nfe:vFCP', ns).text) if imposto.find('.//nfe:vFCP', ns) is not None else 0.0,
-            "ICMS UF Dest": float(imposto.find('.//nfe:vICMSUFDest', ns).text) if imposto.find('.//nfe:vICMSUFDest', ns) is not None else 0.0,
-            "Chave de Acesso": chave
-        }
-        itens_extraidos.append(registro)
-    return itens_extraidos
-
-# Interface Streamlit
-uploaded_files = st.file_uploader("Selecione os ficheiros XML", accept_multiple_files=True, type='xml')
-
-if uploaded_files:
-    lista_consolidada = []
-    for f in uploaded_files:
-        dados_xml = extrair_tags_estilo_query(f.read())
-        lista_consolidada.extend(dados_xml)
-    
-    if lista_consolidada:
-        df = pd.DataFrame(lista_consolidada)
-        st.dataframe(df)
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Base_XML')
-            
-        st.download_button(
-            label="📥 Baixar Base_XML",
-            data=buffer.getvalue(),
-            file_name="Base_XML_Extraida.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            "BC PIS": float(imposto.find('.//nfe:PIS
