@@ -9,7 +9,7 @@ import os
 st.set_page_config(page_title="Sentinela Fiscal Pro", layout="wide")
 st.title("🛡️ Sentinela: Auditoria Fiscal (ICMS & IPI)")
 
-# --- 1. CARREGAR BASES MESTRE + TIPI ---
+# --- 1. CARREGAR BASES MESTRE + TIPI (COM PROTEÇÃO DE ERRO) ---
 @st.cache_data
 def carregar_bases_mestre():
     # A. Planilha do Cliente (Regras Internas)
@@ -23,25 +23,37 @@ def carregar_bases_mestre():
     else:
         return None, None, None, None
 
-    # B. TIPI Oficial (Lê arquivo original da Receita no GitHub)
+    # B. TIPI Oficial (Leitura Blindada contra erros de formatação)
     caminho_tipi = "TIPI.xlsx"
     df_tipi = pd.DataFrame()
+    
     if os.path.exists(caminho_tipi):
         try:
-            # Lê sem cabeçalho e usa Regex para achar linhas de NCM (ex: 1234.56.78)
+            # 1. Lê tudo como texto para não quebrar
             df_raw = pd.read_excel(caminho_tipi, header=None, dtype=str)
-            mask_ncm = df_raw.iloc[:, 0].str.contains(r'^\d{4}\.\d{2}\.\d{2}', regex=True, na=False)
+            df_raw = df_raw.dropna(how='all') # Remove linhas vazias
+
+            # 2. Usa Regex para encontrar onde estão os NCMs (ex: 0101.21.00)
+            # A coluna 0 geralmente é o NCM
+            mask_ncm = df_raw.iloc[:, 0].astype(str).str.contains(r'^\d{4}\.\d{2}\.\d{2}', regex=True, na=False)
             df_tipi = df_raw[mask_ncm].copy()
             
-            # Pega Coluna 0 (NCM) e Coluna 1 ou 2 (Alíquota - ajustável)
-            # Geralmente NCM é coluna A(0) e Alíquota B(1) ou C(2). Ajustado para [0, 1] padrão.
-            df_tipi = df_tipi.iloc[:, [0, 1]]
-            df_tipi.columns = ['NCM', 'ALIQ']
-            
-            # Limpeza
-            df_tipi['NCM'] = df_tipi['NCM'].str.replace('.', '', regex=False).str.strip()
-            df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
-        except:
+            # 3. Seleção de Colunas
+            # Tentativa padrão: Coluna 0 (NCM) e Coluna 1 (Alíquota). 
+            # OBS: Se na sua tabela a alíquota for a coluna C, mude para [0, 2]
+            if df_tipi.shape[1] >= 2:
+                df_tipi = df_tipi.iloc[:, [0, 1]]
+                df_tipi.columns = ['NCM', 'ALIQ']
+                
+                # 4. Limpeza Final
+                df_tipi['NCM'] = df_tipi['NCM'].str.replace('.', '', regex=False).str.strip()
+                # Troca NT por 0, troca vírgula por ponto
+                df_tipi['ALIQ'] = df_tipi['ALIQ'].str.upper().replace('NT', '0').str.strip().str.replace(',', '.')
+            else:
+                df_tipi = pd.DataFrame() # Estrutura inválida
+                
+        except Exception as e:
+            print(f"Erro silencioso ao ler TIPI: {e}")
             df_tipi = pd.DataFrame()
 
     return df_gerencial, df_tribut, df_inter, df_tipi
@@ -95,7 +107,7 @@ def extrair_tags_completo(xml_content):
 
 # --- 3. INTERFACE ---
 with st.sidebar:
-    st.header("📂 Upload")
+    st.header("📂 Upload Central")
     xml_saidas = st.file_uploader("1. Notas de SAÍDA", accept_multiple_files=True, type='xml')
     xml_entradas = st.file_uploader("2. Notas de ENTRADA", accept_multiple_files=True, type='xml')
     rel_status = st.file_uploader("3. Status Sefaz", type=['xlsx', 'csv'])
@@ -103,29 +115,52 @@ with st.sidebar:
 # --- 4. PROCESSAMENTO ---
 if (xml_saidas or xml_entradas) and rel_status:
     # Mapear Status
-    df_st_rel = pd.read_excel(rel_status, dtype=str) if rel_status.name.endswith('.xlsx') else pd.read_csv(rel_status, dtype=str)
-    status_dict = dict(zip(df_st_rel.iloc[:, 0].str.replace(r'\D', '', regex=True), df_st_rel.iloc[:, 5]))
+    try:
+        df_st_rel = pd.read_excel(rel_status, dtype=str) if rel_status.name.endswith('.xlsx') else pd.read_csv(rel_status, dtype=str)
+        status_dict = dict(zip(df_st_rel.iloc[:, 0].str.replace(r'\D', '', regex=True), df_st_rel.iloc[:, 5]))
+    except:
+        st.error("Erro ao ler relatório de status. Verifique o formato.")
+        status_dict = {}
 
     # Extrair XMLs
     list_s = []
-    for f in xml_saidas: list_s.extend(extrair_tags_completo(f.read()))
+    if xml_saidas:
+        for f in xml_saidas: list_s.extend(extrair_tags_completo(f.read()))
     df_s = pd.DataFrame(list_s)
     
     list_e = []
-    for f in xml_entradas: list_e.extend(extrair_tags_completo(f.read()))
+    if xml_entradas:
+        for f in xml_entradas: list_e.extend(extrair_tags_completo(f.read()))
     df_e = pd.DataFrame(list_e)
 
     if not df_s.empty:
+        # Coluna AP (Status)
         df_s['AP'] = df_s['Chave de Acesso'].str.replace(r'\D', '', regex=True).map(status_dict).fillna("Pendente")
         
-        # --- CARREGAR MAPAS ---
-        map_tribut_cst = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 2].astype(str)))
-        map_tribut_aliq = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 3].astype(str)))
-        map_gerencial_cst = dict(zip(df_gerencial.iloc[:, 0].astype(str), df_gerencial.iloc[:, 1].astype(str)))
-        map_inter = dict(zip(df_inter.iloc[:, 0].astype(str), df_inter.iloc[:, 1].astype(str)))
-        map_tipi = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
+        # --- PREPARA MAPAS (COM SEGURANÇA) ---
+        map_tribut_cst = {}
+        map_tribut_aliq = {}
+        map_gerencial_cst = {}
+        map_inter = {}
+        map_tipi = {}
 
-        # === ABA 3: ICMS (Foco em CST e Alíquota ICMS) ===
+        if df_tribut is not None:
+            map_tribut_cst = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 2].astype(str)))
+            map_tribut_aliq = dict(zip(df_tribut.iloc[:, 0].astype(str), df_tribut.iloc[:, 3].astype(str)))
+        
+        if df_gerencial is not None:
+            map_gerencial_cst = dict(zip(df_gerencial.iloc[:, 0].astype(str), df_gerencial.iloc[:, 1].astype(str)))
+        
+        if not df_inter.empty:
+            map_inter = dict(zip(df_inter.iloc[:, 0].astype(str), df_inter.iloc[:, 1].astype(str)))
+
+        # Verificação da TIPI antes de mapear
+        if not df_tipi.empty and 'NCM' in df_tipi.columns and 'ALIQ' in df_tipi.columns:
+            map_tipi = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
+        else:
+            st.warning("⚠️ Tabela TIPI não carregada ou formato inválido. A aba IPI pode vir vazia.")
+
+        # === ABA 3: ICMS ===
         df_icms = df_s.copy()
         
         def f_analise_cst(row):
@@ -133,6 +168,7 @@ if (xml_saidas or xml_entradas) and rel_status:
             if "Cancelamento" in status: return "NF cancelada"
             cst_esp = map_tribut_cst.get(ncm)
             if not cst_esp: return "NCM não encontrado"
+            # Regra de ST na Entrada vs Saída
             if map_gerencial_cst.get(ncm) == "60" and cst != "60": return f"Divergente — CST informado: {cst} | Esperado: 60"
             return "Correto" if cst == cst_esp else f"Divergente — CST informado: {cst} | Esperado: {cst_esp}"
 
@@ -175,30 +211,28 @@ if (xml_saidas or xml_entradas) and rel_status:
         df_icms['Analise Aliq ICMS'] = df_icms.apply(f_aliq, axis=1)
         df_icms['Complemento ICMS Próprio'] = df_icms.apply(f_complemento, axis=1)
 
-
-        # === ABA 4: IPI (Foco exclusivo em TIPI) ===
+        # === ABA 4: IPI (Exclusiva) ===
         df_ipi = df_s.copy()
 
         def f_analise_ipi(row):
             if "Cancelamento" in str(row['AP']): return "NF Cancelada"
             ncm, aliq_xml = str(row['NCM']).strip(), row['Aliq IPI']
             
-            # Busca na TIPI (lida do GitHub)
+            if not map_tipi: return "Tabela TIPI indisponível"
+
+            # Busca na TIPI
             esp = map_tipi.get(ncm)
             if esp is None: return "NCM não encontrado na TIPI"
             
             try: esp_val = float(str(esp).replace(',', '.'))
             except: return "Erro leitura TIPI"
 
-            # Compara
             if abs(aliq_xml - esp_val) < 0.1:
                 return "Correto"
             else:
                 return f"Destacado: {aliq_xml} | Esperado: {esp_val}"
 
-        # Aplica fórmula IPI
         df_ipi['Análise IPI'] = df_ipi.apply(f_analise_ipi, axis=1)
-
 
     # --- EXPORTAÇÃO ---
     buffer = io.BytesIO()
