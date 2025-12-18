@@ -5,7 +5,7 @@ import io
 import re
 import os
 
-# --- 1. CONFIGURAÇÃO VISUAL (ORIGINAL) ---
+# --- 1. CONFIGURAÇÃO VISUAL (MANTIDA) ---
 st.set_page_config(
     page_title="Nascel | Auditoria",
     page_icon="🧡",
@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS PERSONALIZADO (MANTIDO)
+# CSS PERSONALIZADO
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&display=swap');
@@ -31,17 +31,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# --- 2. FUNÇÕES TÉCNICAS (EXTRAÇÃO E AUDITORIA) ---
+# --- 2. FUNÇÕES TÉCNICAS (CORRIGIDAS) ---
 # ==============================================================================
 
 def extrair_dados_xml(files, fluxo):
     data = []
+    if not files: return pd.DataFrame()
     for f in files:
         try:
+            f.seek(0)
             raw = f.read()
             try: txt = raw.decode('utf-8')
             except: txt = raw.decode('latin-1')
-            # Remove namespaces para facilitar busca
             txt = re.sub(r' xmlns="[^"]+"', '', txt)
             root = ET.fromstring(txt)
             
@@ -55,7 +56,6 @@ def extrair_dados_xml(files, fluxo):
                 cfop = prod.find('CFOP').text if prod.find('CFOP') is not None else ""
                 vProd = float(prod.find('vProd').text) if prod.find('vProd') is not None else 0.0
                 
-                # Extração de Impostos
                 imposto = det.find('imposto')
                 cst_icms = ""
                 pICMS = 0.0
@@ -72,38 +72,58 @@ def extrair_dados_xml(files, fluxo):
                     'NCM': ncm, 'CFOP': cfop, 'Valor': vProd,
                     'CST_NF': cst_icms, 'Aliq_NF': pICMS
                 })
-        except: continue
+        except Exception as e:
+            continue
     return pd.DataFrame(data)
 
 def auditoria_fiscal(df, df_regras_icms):
-    if df.empty or df_regras_icms is None: return df
+    """Lógica corrigida para evitar erro de colunas fixas"""
+    if df.empty: return df
+    if df_regras_icms is None or df_regras_icms.empty: 
+        df['STATUS_ICMS'] = "SEM BASE DE REGRAS"
+        return df
     
-    # Padroniza Base ICMS (9 Colunas)
-    df_regras_icms.columns = ['NCM','DESC_INT','CST_INT','ALIQ_INT','RED_INT','DESC_EXT','CST_EXT','ALIQ_EXT','OBS']
-    df_regras_icms['NCM'] = df_regras_icms['NCM'].str.replace(r'\D', '', regex=True).str.zfill(8)
+    # AJUSTE DINÂMICO DE COLUNAS: Garante que o NCM seja a 1ª e os CSTs as 3ª e 7ª
+    cols_esperadas = ['NCM','DESC_INT','CST_INT','ALIQ_INT','RED_INT','DESC_EXT','CST_EXT','ALIQ_EXT','OBS']
     
-    # Merge
+    # Só renomeia se o número de colunas bater, senão usa os nomes originais e tenta mapear por posição
+    if len(df_regras_icms.columns) >= 7:
+        novos_nomes = {df_regras_icms.columns[i]: cols_esperadas[i] for i in range(min(len(df_regras_icms.columns), len(cols_esperadas)))}
+        df_regras_icms = df_regras_icms.rename(columns=novos_nomes)
+    
+    # Tratamento de NCM
+    col_ncm_regra = 'NCM' if 'NCM' in df_regras_icms.columns else df_regras_icms.columns[0]
+    df_regras_icms[col_ncm_regra] = df_regras_icms[col_ncm_regra].astype(str).str.replace(r'\D', '', regex=True).str.zfill(8)
+    
     df['NCM_Limpo'] = df['NCM'].str.replace(r'\D', '', regex=True).str.zfill(8)
-    res = pd.merge(df, df_regras_icms, left_on='NCM_Limpo', right_on='NCM', how='left', suffixes=('', '_R'))
+    
+    res = pd.merge(df, df_regras_icms, left_on='NCM_Limpo', right_on=col_ncm_regra, how='left', suffixes=('', '_R'))
     
     def validar(row):
-        if pd.isna(row['NCM_R']): return "NCM NÃO CADASTRADO"
+        if pd.isna(row[col_ncm_regra]): return "NCM NÃO CADASTRADO"
+        
         cfop = str(row['CFOP'])
         eh_interno = cfop.startswith('5')
         cst_nota = str(row['CST_NF']).zfill(2)
         
-        # Define regra pelo CFOP (Interno ou Externo)
-        cst_esperado = str(row['CST_INT']).zfill(2) if eh_interno else str(row['CST_EXT']).zfill(2)
-        
-        if cst_nota != cst_esperado:
-            return f"ERRO CST (Nota: {cst_nota} | Esperado: {cst_esperado})"
-        return "OK"
+        # Busca nas colunas por posição caso o nome tenha falhado
+        try:
+            cst_esperado_int = str(row['CST_INT']).zfill(2) if 'CST_INT' in row else str(row.iloc[9]).zfill(2)
+            cst_esperado_ext = str(row['CST_EXT']).zfill(2) if 'CST_EXT' in row else str(row.iloc[13]).zfill(2)
+            
+            cst_esperado = cst_esperado_int if eh_interno else cst_esperado_ext
+            
+            if cst_nota != cst_esperado:
+                return f"ERRO CST (Nota: {cst_nota} | Esperado: {cst_esperado})"
+            return "OK"
+        except:
+            return "ERRO NA ESTRUTURA DA TABELA"
 
     res['STATUS_ICMS'] = res.apply(validar, axis=1)
     return res
 
 # ==============================================================================
-# --- 3. SIDEBAR: LOGO NASCEL, STATUS, GESTÃO DE BASES E GABARITOS ---
+# --- 3. SIDEBAR (LOGO, STATUS E GESTÃO) ---
 # ==============================================================================
 with st.sidebar:
     caminho_logo = ".streamlit/nascel sem fundo.png"
@@ -125,10 +145,8 @@ with st.sidebar:
 
     if f_icms: st.success("🟢 Base ICMS OK")
     else: st.error("🔴 Base ICMS Ausente")
-
     if f_tipi: st.success("🟢 Base TIPI OK")
     else: st.error("🔴 Base TIPI Ausente")
-
     if f_pc: st.success("🟢 Base PIS/COF OK")
     else: st.error("🔴 Base PIS/COF Ausente")
 
@@ -141,16 +159,7 @@ with st.sidebar:
         up_icms = st.file_uploader("Nova Base ICMS", type=['xlsx'], key='side_up_icms')
         if up_icms:
             with open("base_icms.xlsx", "wb") as f: f.write(up_icms.getbuffer())
-            st.success("ICMS Atualizado!")
-
-        st.markdown("---")
-        st.caption("Tabela TIPI")
-        if f_tipi:
-            with open(f_tipi, "rb") as f: st.download_button("📥 Baixar TIPI", f, "tipi.xlsx", key="side_dl_tipi")
-        up_tipi = st.file_uploader("Nova TIPI", type=['xlsx'], key='side_up_tipi')
-        if up_tipi:
-            with open("tipi.xlsx", "wb") as f: f.write(up_tipi.getbuffer())
-            st.success("TIPI Atualizada!")
+            st.success("ICMS OK! Recarregue a página.")
 
         st.markdown("---")
         st.caption("Regras PIS/COFINS")
@@ -159,31 +168,27 @@ with st.sidebar:
         up_pc = st.file_uploader("Nova PIS/COF", type=['xlsx'], key='side_up_pc')
         if up_pc:
             with open("CST_Pis_Cofins.xlsx", "wb") as f: f.write(up_pc.getbuffer())
-            st.success("PIS/COF Atualizado!")
+            st.success("PIS/COF OK!")
 
     with st.expander("📂 2. MODELOS DE GABARITO"):
-        st.caption("Modelos para novos cadastros")
         df_m_icms = pd.DataFrame(columns=['NCM','DESC_INT','CST_INT','ALIQ_INT','RED_INT','DESC_EXT','CST_EXT','ALIQ_EXT','OBS'])
         b_icms = io.BytesIO()
         with pd.ExcelWriter(b_icms, engine='xlsxwriter') as w: df_m_icms.to_excel(w, index=False)
         st.download_button("📥 Gabarito ICMS", b_icms.getvalue(), "modelo_icms.xlsx")
         
-        st.markdown("---")
         df_m_pc = pd.DataFrame({'NCM': ['00000000'], 'CST_ENT': ['50'], 'CST_SAI': ['01']})
         b_pc = io.BytesIO()
         with pd.ExcelWriter(b_pc, engine='xlsxwriter') as w: df_m_pc.to_excel(w, index=False)
         st.download_button("📥 Gabarito PIS/COF", b_pc.getvalue(), "modelo_pc.xlsx")
 
 # ==============================================================================
-# --- 3. ÁREA CENTRAL: LOGO SENTINELA E OPERAÇÃO ---
+# --- 4. ÁREA CENTRAL ---
 # ==============================================================================
-
 caminho_titulo = ".streamlit/Sentinela.png"
 if os.path.exists(caminho_titulo):
     col_l, col_tit, col_r = st.columns([3, 4, 3])
     with col_tit: st.image(caminho_titulo, use_column_width=True)
-else:
-    st.markdown("<h1 style='text-align: center; color: #FF6F00;'>SENTINELA</h1>", unsafe_allow_html=True)
+else: st.markdown("<h1 style='text-align: center; color: #FF6F00;'>SENTINELA</h1>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -192,23 +197,22 @@ with col_ent:
     st.markdown("### 📥 1. Entradas")
     up_ent_xml = st.file_uploader("📂 XMLs", type='xml', accept_multiple_files=True, key="ent_xml")
     up_ent_aut = st.file_uploader("🔍 Autenticidade Entradas", type=['xlsx', 'csv'], key="ent_aut")
-
 with col_sai:
-    st.markdown("### 📤 2. Saídas")
+    st.markdown("### 2. Saídas")
     up_sai_xml = st.file_uploader("📂 XMLs", type='xml', accept_multiple_files=True, key="sai_xml")
     up_sai_aut = st.file_uploader("🔍 Autenticidade Saídas", type=['xlsx', 'csv'], key="sai_aut")
 
 st.markdown("---")
 if st.button("🚀 EXECUTAR AUDITORIA COMPLETA"):
     if not up_ent_xml and not up_sai_xml:
-        st.warning("Carregue arquivos XML para processar.")
+        st.warning("Carregue arquivos XML.")
     else:
-        with st.spinner("Processando Auditoria..."):
-            # Carrega Regras
-            base_path = get_file("base_icms.xlsx")
-            df_regras = pd.read_excel(base_path, dtype=str) if base_path else None
+        with st.spinner("Analisando..."):
+            # Carrega Base
+            b_path = get_file("base_icms.xlsx")
+            df_regras = pd.read_excel(b_path, dtype=str) if b_path else None
             
-            # Extração
+            # Processa
             df_e = extrair_dados_xml(up_ent_xml, "Entrada")
             df_s = extrair_dados_xml(up_sai_xml, "Saída")
             df_total = pd.concat([df_e, df_s], ignore_index=True)
@@ -216,11 +220,10 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA"):
             # Auditoria
             resultado = auditoria_fiscal(df_total, df_regras)
             
-            st.success("Análise concluída!")
+            st.success("Análise Concluída!")
             st.dataframe(resultado, use_container_width=True)
             
-            # Download Final
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as wr:
                 resultado.to_excel(wr, index=False)
-            st.download_button("💾 Baixar Relatório Final", buf.getvalue(), "Auditoria_Sentinela.xlsx")
+            st.download_button("💾 Baixar Relatório", buf.getvalue(), "Relatorio_Sentinela.xlsx")
