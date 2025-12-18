@@ -40,11 +40,11 @@ with st.sidebar:
     
     st.markdown("---")
     
-    with st.expander("⚙️ ATUALIZAR BASES", expanded=False):
-        st.caption("Suba aqui as planilhas para ensinar o Sentinela.")
+    with st.expander("⚙️ ATUALIZAR BASES (Upload)", expanded=False):
+        st.caption("Suba aqui as planilhas preenchidas para ensinar o Sentinela.")
         
-        # 1. Base ICMS (NOVA)
-        nova_icms = st.file_uploader("Base ICMS (NCM, CST, Aliq)", type=['xlsx'], key='up_icms_base')
+        # 1. Base ICMS
+        nova_icms = st.file_uploader("Base ICMS", type=['xlsx'], key='up_icms_base')
         if nova_icms:
             with open(".streamlit/base_icms.xlsx", "wb") as f: f.write(nova_icms.getbuffer())
             st.success("✅ Base ICMS Atualizada!")
@@ -72,7 +72,34 @@ elif os.path.exists("Sentinela.png"):
 else:
     st.markdown("<h1 style='text-align: center; color: #FF6F00; margin-bottom:0;'>SENTINELA</h1>", unsafe_allow_html=True)
 
-# --- 4. ÁREA DE UPLOAD ---
+# --- 4. ÁREA DE GABARITOS (NOVA FUNCIONALIDADE) ---
+with st.expander("📂 Baixar Modelos em Branco (Gabaritos)"):
+    st.write("Não tem as planilhas ainda? Baixe os modelos abaixo, preencha e suba na barra lateral.")
+    c_gab1, c_gab2, c_gab3 = st.columns(3)
+    
+    # Modelo ICMS
+    with c_gab1:
+        df_mod_icms = pd.DataFrame({'NCM': ['00000000'], 'CST_ESPERADO': ['00'], 'ALIQUOTA_ESPERADA': [18.0]})
+        b_icms = io.BytesIO()
+        with pd.ExcelWriter(b_icms, engine='xlsxwriter') as w: df_mod_icms.to_excel(w, index=False)
+        st.download_button("📥 Modelo ICMS", b_icms.getvalue(), "modelo_icms.xlsx", use_container_width=True)
+
+    # Modelo IPI
+    with c_gab2:
+        df_mod_ipi = pd.DataFrame({'NCM': ['00000000'], 'ALIQUOTA_IPI': [0.0]})
+        b_ipi = io.BytesIO()
+        with pd.ExcelWriter(b_ipi, engine='xlsxwriter') as w: df_mod_ipi.to_excel(w, index=False)
+        st.download_button("📥 Modelo TIPI (IPI)", b_ipi.getvalue(), "modelo_tipi.xlsx", use_container_width=True)
+
+    # Modelo PIS/COFINS
+    with c_gab3:
+        df_mod_pc = pd.DataFrame({'NCM': ['00000000'], 'CST_ENTRADA': ['50'], 'CST_SAIDA': ['01']})
+        b_pc = io.BytesIO()
+        with pd.ExcelWriter(b_pc, engine='xlsxwriter') as w: df_mod_pc.to_excel(w, index=False)
+        st.download_button("📥 Modelo PIS/COFINS", b_pc.getvalue(), "modelo_pis_cofins.xlsx", use_container_width=True)
+
+# --- 5. ÁREA DE UPLOAD XML ---
+st.markdown("---")
 col_ent, col_sai = st.columns(2, gap="large")
 with col_ent:
     st.markdown("### 📥 1. Entradas")
@@ -86,14 +113,14 @@ with col_sai:
     up_sai_aut = st.file_uploader("🔍 Relatório Autenticidade (Sefaz)", type=['xlsx', 'csv'], key="sai_aut")
 
 # ==============================================================================
-# --- 5. LÓGICA DO SISTEMA ---
+# --- 6. LÓGICA DO SISTEMA ---
 # ==============================================================================
 
 @st.cache_data(ttl=5)
 def carregar_bases_mestre():
     df_tipi = pd.DataFrame()
     df_pc_base = pd.DataFrame()
-    df_icms_base = pd.DataFrame() # Nova base
+    df_icms_base = pd.DataFrame()
 
     def encontrar(nome):
         ps = [f".streamlit/{nome}", nome, f".streamlit/{nome.lower()}", nome.lower()]
@@ -101,17 +128,21 @@ def carregar_bases_mestre():
             if os.path.exists(p): return p
         return None
 
-    # A. ICMS (NOVA LÓGICA)
+    # A. ICMS
     c_icms = encontrar("base_icms.xlsx")
     if c_icms:
         try:
-            # Espera colunas: NCM, CST, ALIQ
             df_raw = pd.read_excel(c_icms, dtype=str)
-            if len(df_raw.columns) >= 3:
+            # Tenta pegar por nome ou índice (Garante robustez)
+            cols = df_raw.columns
+            if 'NCM' in cols and 'CST_ESPERADO' in cols:
+                df_icms_base = df_raw[['NCM', 'CST_ESPERADO', 'ALIQUOTA_ESPERADA']].copy()
+            else:
                 df_icms_base = df_raw.iloc[:, [0, 1, 2]].copy()
-                df_icms_base.columns = ['NCM', 'CST', 'ALIQ']
-                df_icms_base['NCM'] = df_icms_base['NCM'].str.replace(r'\D', '', regex=True).str.zfill(8)
-                df_icms_base['ALIQ'] = df_icms_base['ALIQ'].str.replace(',', '.').astype(float)
+            
+            df_icms_base.columns = ['NCM', 'CST', 'ALIQ']
+            df_icms_base['NCM'] = df_icms_base['NCM'].str.replace(r'\D', '', regex=True).str.zfill(8)
+            df_icms_base['ALIQ'] = df_icms_base['ALIQ'].str.replace(',', '.').astype(float)
         except: pass
 
     # B. TIPI
@@ -139,12 +170,11 @@ def carregar_bases_mestre():
 
     return df_icms_base, df_tipi, df_pc_base
 
-# Carrega e converte para Dicts para ficar rápido
+# Carrega e converte
 df_icms, df_tipi, df_pc = carregar_bases_mestre()
 
 bases = {"ICMS": {}, "TIPI": {}, "PC": {}}
 if not df_icms.empty:
-    # Cria dicionário duplo: Chave NCM -> Valor {CST, ALIQ}
     bases["ICMS"] = df_icms.set_index('NCM').to_dict('index')
 if not df_tipi.empty:
     bases["TIPI"] = dict(zip(df_tipi['NCM'], df_tipi['ALIQ']))
@@ -182,8 +212,8 @@ def extrair_tags(arquivos, origem):
                 
                 row = {
                     "Origem": origem, "Arquivo": arq.name, "Chave": chave,
-                    "NCM": v(prod, 'NCM'), "CFOP": v(prod, 'CFOP'), "Valor": v(prod, 'vProd', True),
-                    "CST_ICMS": "", "Aliq_ICMS": 0.0, "Aliq_IPI": 0.0
+                    "NCM": v(prod, 'NCM'), "CFOP": v(prod, 'CFOP'), "Valor": v(prod, 'vProd', True), "Desc Prod": v(prod, 'xProd'),
+                    "CST_ICMS": "", "Aliq_ICMS": 0.0, "Aliq_IPI": 0.0, "CST_PIS": "", "CST_COFINS": ""
                 }
                 
                 if imp:
@@ -197,6 +227,17 @@ def extrair_tags(arquivos, origem):
                     if ipi:
                         for c in ipi:
                             if c.find('pIPI') is not None: row['Aliq_IPI'] = float(c.find('pIPI').text)
+                    
+                    # PIS COFINS (Simplificado)
+                    pis = imp.find('PIS')
+                    if pis: 
+                        for c in pis: 
+                            if c.find('CST') is not None: row['CST_PIS'] = c.find('CST').text
+                    cof = imp.find('COFINS')
+                    if cof: 
+                        for c in cof: 
+                            if c.find('CST') is not None: row['CST_COFINS'] = c.find('CST').text
+
                 lista.append(row)
         except: erros.append(f"{arq.name}: Erro Leitura")
     return pd.DataFrame(lista), erros
@@ -215,7 +256,7 @@ def check_status(df, file):
     except: df['Status_Sefaz'] = "Erro"
     return df
 
-# --- AUDITORIA IPI ---
+# --- AUDITORIAS ---
 def audit_ipi(df):
     if df.empty or not bases["TIPI"]: return df
     def chk(row):
@@ -227,112 +268,24 @@ def audit_ipi(df):
     df['Auditoria_IPI'] = df.apply(chk, axis=1)
     return df
 
-# --- AUDITORIA ICMS (NOVA) ---
 def audit_icms(df):
     if df.empty or not bases["ICMS"]: return df
     def chk(row):
-        # Busca o NCM na base de ICMS carregada
         regra = bases["ICMS"].get(str(row['NCM']))
         if not regra: return "Sem Base ICMS"
-        
         erros = []
-        # Verifica CST
         if str(row['CST_ICMS']) != str(regra['CST']):
             erros.append(f"CST: {row['CST_ICMS']} (Esp: {regra['CST']})")
-        
-        # Verifica Alíquota (com margem de 0.1)
         try:
             if abs(row['Aliq_ICMS'] - float(regra['ALIQ'])) > 0.1:
                 erros.append(f"Aliq: {row['Aliq_ICMS']} (Esp: {regra['ALIQ']})")
         except: pass
-        
         return "OK" if not erros else " | ".join(erros)
-        
     df['Auditoria_ICMS'] = df.apply(chk, axis=1)
     return df
 
 # --- 6. EXECUÇÃO ---
 df_e, _ = extrair_tags(up_ent_xml, "Entrada")
 df_e = check_status(df_e, up_ent_aut)
-# df_e = audit_icms(df_e) # Opcional: Auditar entrada também?
 
-df_s, _ = extrair_tags(up_sai_xml, "Saída")
-df_s = check_status(df_s, up_sai_aut)
-df_s = audit_ipi(df_s)
-df_s = audit_icms(df_s) # Aplica auditoria de ICMS
-
-st.markdown("---")
-
-# --- 7. CRIAÇÃO DO MODELO DE BASE ICMS PARA DOWNLOAD ---
-# Se o usuário ainda não tem a base, ele pode baixar um modelo aqui
-if bases["ICMS"] == {}:
-    st.warning("⚠️ **Base de ICMS não encontrada!**")
-    st.info("Baixe o modelo abaixo, preencha com seus produtos e suba na barra lateral em 'Atualizar Bases'.")
-    
-    # Cria um modelo de exemplo
-    df_modelo = pd.DataFrame({
-        'NCM': ['00000000', '12345678'],
-        'CST_ESPERADO': ['00', '60'],
-        'ALIQUOTA_ESPERADA': [18.0, 0.0]
-    })
-    
-    buffer_modelo = io.BytesIO()
-    with pd.ExcelWriter(buffer_modelo, engine='xlsxwriter') as writer:
-        df_modelo.to_excel(writer, index=False)
-        
-    st.download_button("📥 Baixar Modelo Base ICMS.xlsx", buffer_modelo.getvalue(), "base_icms.xlsx")
-
-# --- RESULTADOS ---
-if df_e.empty and df_s.empty:
-    st.info("👆 Carregue seus XMLs acima para começar.")
-else:
-    t1, t2, t3 = st.tabs(["Dashboard", "Entradas", "Saídas"])
-    
-    with t1:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total XMLs", len(df_e) + len(df_s))
-        
-        # Contadores de Erro
-        err_ipi = len(df_s[df_s['Auditoria_IPI'].str.contains('Div', na=False)]) if 'Auditoria_IPI' in df_s else 0
-        err_icms = len(df_s[df_s['Auditoria_ICMS'].str.contains('CST|Aliq', na=False)]) if 'Auditoria_ICMS' in df_s else 0
-        
-        c2.metric("Divergências IPI", err_ipi)
-        c3.metric("Divergências ICMS", err_icms)
-        c4.metric("Itens s/ Base ICMS", len(df_s[df_s['Auditoria_ICMS'] == 'Sem Base ICMS']) if 'Auditoria_ICMS' in df_s else 0)
-
-    with t2: st.dataframe(df_e, use_container_width=True)
-    with t3: st.dataframe(df_s, use_container_width=True)
-
-    # --- INTELIGÊNCIA ---
-    st.markdown("---")
-    st.subheader("🧠 Inteligência de Bases")
-    
-    # Consolida NCMs
-    all_ncms = pd.concat([df_e['NCM'] if not df_e.empty else pd.Series(), 
-                          df_s['NCM'] if not df_s.empty else pd.Series()]).unique()
-    
-    # Verifica o que falta na Base de ICMS
-    ncms_sem_base = [n for n in all_ncms if n not in bases["ICMS"]]
-    
-    if ncms_sem_base:
-        st.write(f"Encontrei **{len(ncms_sem_base)} produtos** sem cadastro na Base de ICMS.")
-        
-        df_novos = pd.DataFrame({'NCM': ncms_sem_base, 'CST_ESPERADO': '', 'ALIQUOTA_ESPERADA': ''})
-        
-        buf_up = io.BytesIO()
-        with pd.ExcelWriter(buf_up, engine='xlsxwriter') as w:
-            df_novos.to_excel(w, index=False)
-            
-        st.download_button("📦 Baixar Planilha para Cadastrar Novos ICMS", buf_up.getvalue(), "novos_icms.xlsx")
-    else:
-        st.success("✨ Todos os produtos dos XMLs já estão na sua Base de ICMS!")
-
-    # --- DOWNLOAD FINAL ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    col_dl, _ = st.columns([1,2])
-    with col_dl:
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
-            if not df_e.empty: df_e.to_excel(w, sheet_name='Entradas', index=False)
-            if not df_s.empty: df_s.to_excel(w, sheet_name='Saidas', index=False)
-        st.download_button("💾 BAIXAR RELATÓRIO COMPLETO", buf.getvalue(), "Auditoria_Nascel.xlsx")
+df_s, _ = extrair_tags(up_
