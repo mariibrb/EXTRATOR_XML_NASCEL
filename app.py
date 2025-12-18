@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import io
 import re
 import os
+import shutil
 
 # --- 1. CONFIGURAÇÃO VISUAL (LAYOUT NOVO) ---
 st.set_page_config(
@@ -49,8 +50,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SIDEBAR (LOGO NASCEL) ---
+# ==============================================================================
+# --- 2. SIDEBAR COM ÁREA DE ATUALIZAÇÃO (A SOLUÇÃO DO SEU PROBLEMA) ---
+# ==============================================================================
 with st.sidebar:
+    # --- LOGO ---
     caminho_logo = ".streamlit/nascel sem fundo.png"
     if os.path.exists(caminho_logo):
         st.image(caminho_logo, use_column_width=True)
@@ -61,6 +65,29 @@ with st.sidebar:
     
     st.markdown("---")
     st.info("💡 **Dica:** Carregue os arquivos nas caixas ao centro para iniciar.")
+    
+    st.markdown("---")
+    
+    # --- ÁREA DE ATUALIZAÇÃO DE BASES ---
+    with st.expander("⚙️ ATUALIZAR BASES", expanded=False):
+        st.caption("Suba aqui as planilhas atualizadas para substituir as regras antigas.")
+        
+        # Upload para TIPI
+        nova_tipi = st.file_uploader("Nova Tabela TIPI (Excel)", type=['xlsx'], key='up_tipi_base')
+        if nova_tipi is not None:
+            # Salva o arquivo na pasta .streamlit substituindo o anterior
+            with open(".streamlit/tipi.xlsx", "wb") as f:
+                f.write(nova_tipi.getbuffer())
+            st.success("✅ TIPI Atualizada!")
+            
+        # Upload para PIS/COFINS
+        nova_pc = st.file_uploader("Nova Tabela PIS/COFINS (Excel)", type=['xlsx'], key='up_pc_base')
+        if nova_pc is not None:
+            with open(".streamlit/CST_Pis_Cofins.xlsx", "wb") as f:
+                f.write(nova_pc.getbuffer())
+            st.success("✅ PIS/COFINS Atualizada!")
+            
+        st.caption("⚠️ As alterações aplicam-se imediatamente.")
 
 # --- 3. TÍTULO PRINCIPAL (SENTINELA) ---
 caminho_titulo = ".streamlit/Sentinela.png"
@@ -98,17 +125,17 @@ with col_sai:
 # --- 5. O CÉREBRO ROBUSTO ---
 # ==============================================================================
 
-@st.cache_data
+@st.cache_data(ttl=5) # TTL=5 força recarregar as bases se elas mudarem
 def carregar_bases_mestre():
     df_tipi = pd.DataFrame()
     df_pc_base = pd.DataFrame()
 
     def encontrar_arquivo(nome_base):
         possibilidades = [
-            nome_base, nome_base.lower(), 
-            f".streamlit/{nome_base}", f".streamlit/{nome_base.lower()}",
-            "CST_Pis_Cofins.xlsx", ".streamlit/CST_Pis_Cofins.xlsx",
-            "tipi.xlsx", ".streamlit/tipi.xlsx"
+            f".streamlit/{nome_base}", # Prioridade para a pasta oculta
+            nome_base, 
+            nome_base.lower(), 
+            f".streamlit/{nome_base.lower()}"
         ]
         for p in possibilidades:
             if os.path.exists(p): return p
@@ -308,7 +335,6 @@ else:
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Notas", len(df_e) + len(df_s))
         
-        # Lógica segura de contagem
         err_e = len(df_e[~df_e['Status_Sefaz'].str.contains('Autoriz|OK|Não Verif', na=False, case=False)]) if not df_e.empty else 0
         err_s = len(df_s[~df_s['Status_Sefaz'].str.contains('Autoriz|OK|Não Verif', na=False, case=False)]) if not df_s.empty else 0
         c2.metric("Alertas Sefaz", err_e + err_s)
@@ -330,8 +356,6 @@ else:
 
     # 1. Preparar dados consolidados (Entradas + Saídas)
     
-    # Renomeia colunas para unificar
-    # Usa nomes seguros que existem nas funções de extração
     df_e_mini = pd.DataFrame()
     if not df_e.empty:
         df_e_mini = df_e.rename(columns={'Desc Prod': 'Descricao', 'Aliq IPI': 'Aliq_IPI', 'CST PIS': 'CST_PIS', 'CST COFINS': 'CST_COFINS'})
