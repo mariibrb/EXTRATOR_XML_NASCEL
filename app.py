@@ -5,72 +5,111 @@ import io
 import re
 import os
 
-# --- 1. CONFIGURAÇÃO VISUAL PREMIUM (ESTILO NASCE) ---
+# --- 1. CONFIGURAÇÃO VISUAL NASCEL (Cinza & Laranja & Fofo) ---
 st.set_page_config(
-    page_title="Nasce | Sentinela Fiscal",
-    page_icon="🦅",
+    page_title="Nascel | Auditoria",
+    page_icon="🧡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS Personalizado para o visual "Aprovado"
+# CSS PERSONALIZADO (A Mágica do Design)
 st.markdown("""
     <style>
-    /* Fundo geral mais limpo */
+    /* Importando fonte arredondada fofa */
+    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Quicksand', sans-serif;
+    }
+
+    /* Fundo Geral - Cinza Suave */
     .stApp {
-        background-color: #f4f6f9;
+        background-color: #F7F7F7;
     }
-    /* Cards de métricas brancos com sombra suave */
-    div[data-testid="metric-container"] {
-        background-color: #ffffff;
-        border: 1px solid #e1e4e8;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    /* Títulos com cor corporativa */
-    h1, h2, h3 {
-        color: #2c3e50;
-        font-family: 'Segoe UI', sans-serif;
-    }
-    /* Sidebar mais profissional */
+
+    /* Barra Lateral - Cinza um pouco mais escuro */
     section[data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #ddd;
+        background-color: #EEEEEE;
+        border-right: 1px solid #E0E0E0;
+    }
+
+    /* Títulos em Laranja Nascel */
+    h1, h2, h3 {
+        color: #FF6F00 !important; /* Laranja forte */
+    }
+    
+    /* Textos normais em Cinza Escuro */
+    p, label, span {
+        color: #555555;
+    }
+
+    /* Cards (Métricas) - Fofos e Arredondados */
+    div[data-testid="metric-container"] {
+        background-color: #FFFFFF;
+        border-left: 5px solid #FF6F00; /* Detalhe Laranja */
+        border-radius: 15px; /* Bem arredondado */
+        padding: 15px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+
+    /* Botões - Laranjas e Redondinhos */
+    .stButton>button {
+        background-color: #FF6F00;
+        color: white;
+        border-radius: 25px;
+        border: none;
+        font-weight: bold;
+        padding: 10px 20px;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #E65100; /* Laranja mais escuro no hover */
+        box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
+    }
+
+    /* Expander (Abas laterais) */
+    .streamlit-expanderHeader {
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        color: #FF6F00;
+        font-weight: 600;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CABEÇALHO E SIDEBAR ---
+# --- 2. BARRA LATERAL (LOGO E OS 6 BOTÕES) ---
 with st.sidebar:
-    # Espaço para Logo
-    st.markdown("## 🦅 NASCE")
-    st.caption("Inteligência e Auditoria Fiscal")
+    # LOGO DA NASCEL
+    if os.path.exists("logo_nascel.png"):
+        st.image("logo_nascel.png", use_column_width=True)
+    else:
+        # Logo provisório "Fofo" feito em código caso não tenha a imagem
+        st.markdown("""
+            <div style='text-align: center; background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px;'>
+                <h1 style='margin:0; color:#FF6F00; font-size: 40px;'>nascel</h1>
+                <span style='color: #888; font-size: 14px;'>inteligência fiscal</span>
+            </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.header("🎛️ Painel de Controle")
+    st.markdown("### 🧡 Painel de Upload")
 
-    # --- OS 6 BOTÕES DE UPLOAD (COM CHAVES ÚNICAS CORRIGIDAS) ---
-    
+    # --- GRUPO 1: ENTRADAS ---
     with st.expander("📥 1. ENTRADAS", expanded=True):
-        st.markdown("**Arquivos Obrigatórios:**")
-        up_ent_xml = st.file_uploader("XMLs de Entrada", type='xml', accept_multiple_files=True, key="ent_xml")
-        up_ent_aut = st.file_uploader("Autenticidade (Sefaz)", type=['xlsx', 'csv'], key="ent_aut")
+        up_ent_xml = st.file_uploader("XMLs (Notas)", type='xml', accept_multiple_files=True, key="ent_xml")
+        up_ent_aut = st.file_uploader("Autenticidade (Excel)", type=['xlsx', 'csv'], key="ent_aut")
         up_ent_ger = st.file_uploader("Gerencial (Regras)", type=['xlsx'], key="ent_ger")
 
+    # --- GRUPO 2: SAÍDAS ---
     with st.expander("📤 2. SAÍDAS", expanded=True):
-        st.markdown("**Arquivos Obrigatórios:**")
-        up_sai_xml = st.file_uploader("XMLs de Saída", type='xml', accept_multiple_files=True, key="sai_xml")
-        up_sai_aut = st.file_uploader("Autenticidade (Sefaz)", type=['xlsx', 'csv'], key="sai_aut")
+        up_sai_xml = st.file_uploader("XMLs (Notas)", type='xml', accept_multiple_files=True, key="sai_xml")
+        up_sai_aut = st.file_uploader("Autenticidade (Excel)", type=['xlsx', 'csv'], key="sai_aut")
         up_sai_ger = st.file_uploader("Gerencial (Regras)", type=['xlsx'], key="sai_ger")
 
-    st.info("💡 O sistema cruza automaticamente os XMLs com o status da Sefaz.")
-
-# --- 3. CARREGAR BASES DO SISTEMA (AUTO) ---
+# --- 3. CARREGAR BASES DO SISTEMA (TIPI/PISCOFINS) ---
 @st.cache_data
 def carregar_bases_sistema():
     bases = {"TIPI": {}, "PIS_COFINS": {}}
-    # Tenta carregar TIPI
     if os.path.exists("TIPI.xlsx"):
         try:
             df = pd.read_excel("TIPI.xlsx", dtype=str)
@@ -78,7 +117,6 @@ def carregar_bases_sistema():
             df['ALIQ'] = df.iloc[:, 1].str.replace(',', '.')
             bases["TIPI"] = dict(zip(df['NCM'], df['ALIQ']))
         except: pass
-    # Tenta carregar PIS/COFINS
     if os.path.exists("Pis_Cofins.xlsx"):
         try:
             df = pd.read_excel("Pis_Cofins.xlsx", dtype=str)
@@ -94,31 +132,26 @@ def extrair_xml(arquivos, origem):
     dados = []
     for arq in arquivos:
         try:
-            # Leitura segura
             raw = arq.read()
             try: xml = raw.decode('utf-8')
             except: xml = raw.decode('latin-1')
             
-            # Limpeza
             xml = re.sub(r' xmlns="[^"]+"', '', xml)
             xml = re.sub(r' xmlns:xsi="[^"]+"', '', xml)
             root = ET.fromstring(xml)
             
-            # Filtros
             if "resNFe" in root.tag or "procEvento" in root.tag: continue
             inf = root.find('.//infNFe')
             if inf is None: continue
             
             chave = inf.attrib.get('Id', '')[3:]
-            emit = root.find('.//emit/xNome').text if root.find('.//emit/xNome') is not None else ""
-            nat_op = root.find('.//ide/natOp').text if root.find('.//ide/natOp') is not None else ""
+            nat = root.find('.//ide/natOp').text if root.find('.//ide/natOp') is not None else ""
             
             dets = root.findall('.//det')
             for det in dets:
                 prod = det.find('prod')
                 imposto = det.find('imposto')
                 
-                # Helper
                 def val(node, tag, is_float=False):
                     if node is None: return 0.0 if is_float else ""
                     x = node.find(tag)
@@ -130,87 +163,71 @@ def extrair_xml(arquivos, origem):
                     "Origem": origem,
                     "Arquivo": arq.name,
                     "Chave": chave,
-                    "Emitente": emit,
-                    "Natureza": nat_op,
-                    "NItem": det.attrib.get('nItem'),
+                    "Natureza": nat,
+                    "Item": det.attrib.get('nItem'),
                     "NCM": val(prod, 'NCM'),
                     "CFOP": val(prod, 'CFOP'),
                     "Valor Prod": val(prod, 'vProd', True),
                     "CST ICMS": "", "Aliq ICMS": 0.0,
-                    "CST IPI": "", "Aliq IPI": 0.0,
-                    "CST PIS": "", "CST COFINS": ""
+                    "Aliq IPI": 0.0, "CST PIS": "", "CST COFINS": ""
                 }
                 
                 if imposto:
-                    # ICMS
                     icms = imposto.find('ICMS')
                     if icms:
                         for c in icms:
                             if c.find('CST') is not None: item['CST ICMS'] = c.find('CST').text
                             elif c.find('CSOSN') is not None: item['CST ICMS'] = c.find('CSOSN').text
                             if c.find('pICMS') is not None: item['Aliq ICMS'] = float(c.find('pICMS').text)
-                    # IPI
                     ipi = imposto.find('IPI')
                     if ipi:
                         for c in ipi:
-                            if c.find('CST') is not None: item['CST IPI'] = c.find('CST').text
                             if c.find('pIPI') is not None: item['Aliq IPI'] = float(c.find('pIPI').text)
-                    # PIS/COF
                     pis = imposto.find('PIS')
                     if pis:
-                        for c in pis: 
+                        for c in pis:
                             if c.find('CST') is not None: item['CST PIS'] = c.find('CST').text
                     cof = imposto.find('COFINS')
                     if cof:
-                        for c in cof: 
+                        for c in cof:
                             if c.find('CST') is not None: item['CST COFINS'] = c.find('CST').text
                 
                 dados.append(item)
         except: pass
     return pd.DataFrame(dados)
 
-# --- 5. LOGICA DE ANÁLISE ---
+# --- 5. LÓGICA DE ANÁLISE ---
 def aplicar_analises(df, status_file):
     if df.empty: return df
     
-    # 1. Autenticidade (Sefaz)
+    # Autenticidade
     if status_file:
         try:
             if status_file.name.endswith('xlsx'): df_st = pd.read_excel(status_file, dtype=str)
             else: df_st = pd.read_csv(status_file, dtype=str)
-            # Dicionario Chave -> Status
             status_map = dict(zip(df_st.iloc[:, 0].str.replace(r'\D', '', regex=True), df_st.iloc[:, -1]))
             df['Status Sefaz'] = df['Chave'].map(status_map).fillna("Não Localizado")
-        except:
-            df['Status Sefaz'] = "Erro na Leitura do Status"
+        except: df['Status Sefaz'] = "Erro Status"
     else:
-        df['Status Sefaz'] = "Arquivo não enviado"
+        df['Status Sefaz'] = "N/A"
 
-    # 2. Auditoria Tributária (Bases Sistema)
     # IPI
     if bases_sistema["TIPI"]:
         def check_ipi(row):
-            ncm = str(row['NCM'])
-            aliq_xml = row['Aliq IPI']
-            aliq_tipi = bases_sistema["TIPI"].get(ncm)
-            if aliq_tipi is None: return "NCM fora da TIPI"
-            if aliq_tipi == "NT": return "OK (NT)"
-            try:
-                if abs(aliq_xml - float(aliq_tipi)) > 0.1: return f"Divergente (XML: {aliq_xml}% | TIPI: {aliq_tipi}%)"
-                return "OK"
+            aliq_tipi = bases_sistema["TIPI"].get(str(row['NCM']))
+            if aliq_tipi is None: return "NCM Off"
+            if aliq_tipi == "NT": return "OK"
+            try: return "OK" if abs(row['Aliq IPI'] - float(aliq_tipi)) < 0.1 else "Divergente"
             except: return "Erro"
-        df['Auditoria IPI'] = df.apply(check_ipi, axis=1)
+        df['Audit IPI'] = df.apply(check_ipi, axis=1)
 
     # PIS COFINS
     if bases_sistema["PIS_COFINS"]:
         def check_pc(row):
-            ncm = str(row['NCM'])
-            cst_xml = str(row['CST PIS'])
-            cst_esp = bases_sistema["PIS_COFINS"].get(ncm)
-            if not cst_esp: return "Sem Base"
-            if cst_xml != cst_esp: return f"Div: {cst_xml} | Esp: {cst_esp}"
-            return "OK"
-        df['Auditoria PIS/COF'] = df.apply(check_pc, axis=1)
+            esp = bases_sistema["PIS_COFINS"].get(str(row['NCM']))
+            if not esp: return "NCM Off"
+            return "OK" if str(row['CST PIS']) == esp else f"Div (Esp: {esp})"
+        df['Audit PIS/COF'] = df.apply(check_pc, axis=1)
         
     return df
 
@@ -221,76 +238,46 @@ df_ent_final = aplicar_analises(df_ent, up_ent_aut)
 df_sai = extrair_xml(up_sai_xml, "Saída") if up_sai_xml else pd.DataFrame()
 df_sai_final = aplicar_analises(df_sai, up_sai_aut)
 
-# --- 6. DASHBOARD VISUAL ---
+# --- 6. DASHBOARD FOFO E LIMPO ---
 
-st.title("🛡️ Sentinela Fiscal")
-st.markdown("### Auditoria Inteligente e Validação de Autenticidade")
+st.title("🛡️ Auditoria Fiscal")
 
 if df_ent_final.empty and df_sai_final.empty:
-    st.info("👋 Olá! Use a barra lateral para carregar seus arquivos XML e Tabelas de Autenticidade.")
-
+    st.info("👋 Olá! Vamos começar? Carregue seus arquivos no painel cinza ao lado.")
 else:
-    # ABAS
-    tab1, tab2, tab3 = st.tabs(["📊 Visão Gerencial", "📥 Entradas Detalhadas", "📤 Saídas Detalhadas"])
+    tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "📥 Entradas", "📤 Saídas"])
     
     with tab1:
-        st.subheader("Resumo da Operação")
+        st.markdown("### Resumo")
         c1, c2, c3, c4 = st.columns(4)
         
-        # Cálculos de Erros
-        err_ent = 0
-        if not df_ent_final.empty and 'Status Sefaz' in df_ent_final.columns:
-            err_ent = len(df_ent_final[~df_ent_final['Status Sefaz'].str.contains("Autoriz|OK", na=False, case=False)])
+        err_ent = len(df_ent_final[~df_ent_final['Status Sefaz'].str.contains("Autoriz|OK", na=False)]) if not df_ent_final.empty else 0
+        err_sai = len(df_sai_final[~df_sai_final['Status Sefaz'].str.contains("Autoriz|OK", na=False)]) if not df_sai_final.empty else 0
         
-        err_sai = 0
-        if not df_sai_final.empty and 'Status Sefaz' in df_sai_final.columns:
-            err_sai = len(df_sai_final[~df_sai_final['Status Sefaz'].str.contains("Autoriz|OK", na=False, case=False)])
-        
-        c1.metric("Total de Notas", len(df_ent_final) + len(df_sai_final))
+        c1.metric("Total Notas", len(df_ent_final) + len(df_sai_final))
         c2.metric("Entradas", len(df_ent_final))
         c3.metric("Saídas", len(df_sai_final))
-        c4.metric("Alertas de Autenticidade", err_ent + err_sai, delta_color="inverse")
+        c4.metric("Alertas Sefaz", err_ent + err_sai)
         
         st.markdown("---")
         g1, g2 = st.columns(2)
-        
-        if not df_ent_final.empty and 'Status Sefaz' in df_ent_final.columns:
-            with g1:
-                st.markdown("**Status Entradas**")
-                st.bar_chart(df_ent_final['Status Sefaz'].value_counts())
-
-        if not df_sai_final.empty and 'Status Sefaz' in df_sai_final.columns:
-            with g2:
-                st.markdown("**Status Saídas**")
-                st.bar_chart(df_sai_final['Status Sefaz'].value_counts())
+        if not df_ent_final.empty:
+            with g1: st.caption("Status Entradas"); st.bar_chart(df_ent_final['Status Sefaz'].value_counts(), color="#FF6F00")
+        if not df_sai_final.empty:
+            with g2: st.caption("Status Saídas"); st.bar_chart(df_sai_final['Status Sefaz'].value_counts(), color="#FF6F00")
 
     with tab2:
-        st.subheader("📥 Detalhamento de Entradas")
-        if not df_ent_final.empty:
-            st.dataframe(df_ent_final, use_container_width=True)
-        else:
-            st.warning("Nenhum dado de entrada processado.")
+        if not df_ent_final.empty: st.dataframe(df_ent_final, use_container_width=True)
+        else: st.warning("Sem Entradas.")
 
     with tab3:
-        st.subheader("📤 Detalhamento de Saídas")
-        if not df_sai_final.empty:
-            st.dataframe(df_sai_final, use_container_width=True)
-        else:
-            st.warning("Nenhum dado de saída processado.")
+        if not df_sai_final.empty: st.dataframe(df_sai_final, use_container_width=True)
+        else: st.warning("Sem Saídas.")
 
-    # --- 7. EXPORTAÇÃO ---
     st.markdown("---")
-    if st.button("💾 Baixar Relatório Completo (Excel)"):
+    if st.button("💾 Baixar Relatório (Excel)"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            if not df_ent_final.empty: 
-                df_ent_final.to_excel(writer, index=False, sheet_name='Entradas')
-            if not df_sai_final.empty: 
-                df_sai_final.to_excel(writer, index=False, sheet_name='Saídas')
-                
-        st.download_button(
-            label="📥 Clique para Download",
-            data=buffer.getvalue(),
-            file_name="Relatorio_Sentinela_Nasce.xlsx",
-            mime="application/vnd.ms-excel"
-        )
+            if not df_ent_final.empty: df_ent_final.to_excel(writer, index=False, sheet_name='Entradas')
+            if not df_sai_final.empty: df_sai_final.to_excel(writer, index=False, sheet_name='Saídas')
+        st.download_button("📥 Clique para Baixar", buffer.getvalue(), "Relatorio_Nascel.xlsx", mime="application/vnd.ms-excel")
