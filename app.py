@@ -356,4 +356,74 @@ else:
             data=buffer.getvalue(),
             file_name="Relatorio_Nascel_Auditoria.xlsx",
             mime="application/vnd.ms-excel"
+            # ... (Seu código anterior termina na exibição das abas)
+
+    # ========================================================
+    # 🧠 INTELIGÊNCIA: SUGESTÃO DE ATUALIZAÇÃO DE BASES
+    # ========================================================
+    st.markdown("---")
+    st.subheader("🧠 Inteligência das Bases")
+    st.info("O Sentinela identificou itens nos XMLs que **não estão cadastrados** nas suas bases atuais. Baixe a planilha abaixo para atualizar seus arquivos mestres.")
+
+    # 1. Preparar dados consolidados (Entradas + Saídas)
+    cols_uteis = ['NCM', 'Desc Prod', 'Aliq_IPI', 'CST_PIS', 'CST_COFINS']
+    
+    # Padroniza nomes das colunas para unir
+    df_e_mini = df_e.rename(columns={'Desc Prod': 'Descricao', 'Aliq IPI': 'Aliq_IPI', 'CST PIS': 'CST_PIS', 'CST COFINS': 'CST_COFINS'})[['NCM', 'Descricao', 'Aliq_IPI', 'CST_PIS', 'CST_COFINS']] if not df_e.empty else pd.DataFrame()
+    df_s_mini = df_s.rename(columns={'Desc Prod': 'Descricao', 'Aliq IPI': 'Aliq_IPI', 'CST PIS': 'CST_PIS', 'CST COFINS': 'CST_COFINS'})[['NCM', 'Descricao', 'Aliq_IPI', 'CST_PIS', 'CST_COFINS']] if not df_s.empty else pd.DataFrame()
+    
+    df_full = pd.concat([df_e_mini, df_s_mini], ignore_index=True)
+
+    if not df_full.empty:
+        # A. NOVOS PARA TIPI
+        # Filtra NCMs que NÃO estão na base TIPI atual
+        novos_tipi = df_full[~df_full['NCM'].isin(bases.get('TIPI', {}).keys())].copy()
+        
+        if not novos_tipi.empty:
+            # Agrupa por NCM para não repetir e pega a moda (valor mais frequente) da alíquota
+            sugestao_tipi = novos_tipi.groupby('NCM').agg({
+                'Descricao': 'first', # Pega a primeira descrição que achar
+                'Aliq_IPI': lambda x: x.mode()[0] if not x.mode().empty else 0.0 # Sugere a alíquota mais usada
+            }).reset_index()
+            sugestao_tipi.columns = ['NCM', 'Descrição Sugerida', 'Alíquota XML (Sugestão)']
+        else:
+            sugestao_tipi = pd.DataFrame()
+
+        # B. NOVOS PARA PIS/COFINS
+        # Filtra NCMs que NÃO estão na base PC atual
+        novos_pc = df_full[~df_full['NCM'].isin(bases.get('PC', {}).keys())].copy()
+        
+        if not novos_pc.empty:
+            sugestao_pc = novos_pc.groupby('NCM').agg({
+                'Descricao': 'first',
+                'CST_PIS': lambda x: x.mode()[0] if not x.mode().empty else '',
+                'CST_COFINS': lambda x: x.mode()[0] if not x.mode().empty else ''
+            }).reset_index()
+            sugestao_pc.columns = ['NCM', 'Descrição Sugerida', 'CST PIS (XML)', 'CST COF (XML)']
+        else:
+            sugestao_pc = pd.DataFrame()
+
+        # C. BOTÃO DE DOWNLOAD DA ATUALIZAÇÃO
+        if not sugestao_tipi.empty or not sugestao_pc.empty:
+            col_msg, col_bt = st.columns([2, 1])
+            with col_msg:
+                st.write(f"📦 **Novos NCMs detectados:** {len(sugestao_tipi)} para TIPI | {len(sugestao_pc)} para PIS/COFINS")
+            
+            with col_bt:
+                buffer_update = io.BytesIO()
+                with pd.ExcelWriter(buffer_update, engine='xlsxwriter') as writer:
+                    if not sugestao_tipi.empty: 
+                        sugestao_tipi.to_excel(writer, sheet_name='Atualizar_TIPI', index=False)
+                    if not sugestao_pc.empty: 
+                        sugestao_pc.to_excel(writer, sheet_name='Atualizar_PisCofins', index=False)
+                
+                st.download_button(
+                    label="🧠 Baixar Planilha de Atualização",
+                    data=buffer_update.getvalue(),
+                    file_name="Sugestao_Atualizacao_Bases.xlsx",
+                    mime="application/vnd.ms-excel",
+                    key="btn_update"
+                )
+        else:
+            st.success("✨ Suas bases estão 100% atualizadas com os XMLs analisados!")
         )
