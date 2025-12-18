@@ -72,7 +72,7 @@ def carregar_bases_mestre():
 
 df_gerencial, df_tribut, df_inter, df_tipi, df_pc_base = carregar_bases_mestre()
 
-# --- 2. EXTRAÇÃO XML (COM RELATÓRIO DE ERROS DETALHADO) ---
+# --- 2. EXTRAÇÃO XML (COM LIMPEZA AGRESSIVA DE NAMESPACES) ---
 def extrair_tags_com_raio_x(arquivos_upload):
     ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
     itens_validos = []
@@ -81,111 +81,108 @@ def extrair_tags_com_raio_x(arquivos_upload):
     for arquivo in arquivos_upload:
         try:
             content = arquivo.read()
-            # Tenta decodificar (utf-8 ou latin-1)
+            # Tenta decodificar
             try: xml_str = content.decode('utf-8')
             except: xml_str = content.decode('latin-1')
 
-            # Limpeza bruta de namespaces para facilitar detecção
-            xml_str_clean = re.sub(r' xmlns="[^"]+"', '', xml_str, count=1)
+            # --- CORREÇÃO DO ERRO ---
+            # Remove TODOS os namespaces, não apenas o primeiro.
+            # Isso resolve o problema de notas como Fricasa/Alibem que repetem o xmlns na tag NFe
+            xml_str_clean = re.sub(r' xmlns="[^"]+"', '', xml_str)
+            xml_str_clean = re.sub(r' xmlns:xsi="[^"]+"', '', xml_str_clean)
+            xml_str_clean = re.sub(r' xsi:schemaLocation="[^"]+"', '', xml_str_clean)
             
-            try: root = ET.fromstring(xml_str)
-            except: root = ET.fromstring(xml_str_clean)
+            # Parseia o XML limpo (agora sem prefixos chatos)
+            root = ET.fromstring(xml_str_clean)
 
-            # --- DIAGNÓSTICO DE IGNORADOS ---
-            # 1. Nota de Resumo (Comum em downloads em lote)
+            # --- DIAGNÓSTICO ---
             if "resNFe" in root.tag or root.find(".//resNFe") is not None:
                 arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "Nota de Resumo (Sefaz enviou s/ produtos)"})
                 continue
 
-            # 2. CT-e (Conhecimento de Transporte)
             if "infCte" in root.tag or root.find(".//infCte") is not None:
-                arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "Arquivo é um CT-e (Frete) - Layout diferente"})
+                arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "CT-e (Transporte) - Layout diferente"})
                 continue
 
-            # 3. Eventos (Cancelamento / Carta de Correção)
             if "procEventoNFe" in root.tag or root.find(".//retEvento") is not None:
                 arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "Evento (Cancelamento/CCe) - Não é a nota fiscal"})
                 continue
             
-            # 4. Tenta achar a Nota Fiscal Padrão
-            infNFe = root.find('.//{http://www.portalfiscal.inf.br/nfe}infNFe')
-            if infNFe is None: infNFe = root.find('.//infNFe')
+            # Procura infNFe (agora sem namespace é fácil achar)
+            infNFe = root.find('.//infNFe')
             
             if infNFe is None:
                 arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "XML desconhecido (Não encontrei tag infNFe)"})
                 continue
 
-            # Configura Namespace para busca
-            if root.tag.startswith('{'): tag_prefix = root.tag.split('}')[0] + '}'
-            else: tag_prefix = ''
+            # Como removemos os namespaces, a busca fica limpa
+            tag_prefix = "" 
 
-            # Verifica se tem itens/produtos
-            dets = root.findall(f".//{tag_prefix}det")
+            dets = root.findall(f".//det")
             if not dets:
                 arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": "Nota Fiscal sem Produtos (Tag det vazia)"})
                 continue
 
-            # --- EXTRAÇÃO DOS DADOS ---
-            ide = root.find(f".//{tag_prefix}ide")
-            emit = root.find(f".//{tag_prefix}emit")
-            dest = root.find(f".//{tag_prefix}dest")
+            # Extração
+            ide = root.find(f".//ide")
+            emit = root.find(f".//emit")
+            dest = root.find(f".//dest")
             chave = infNFe.attrib.get('Id', '')[3:]
 
             for det in dets:
-                prod = det.find(f"{tag_prefix}prod")
-                imposto = det.find(f"{tag_prefix}imposto")
+                prod = det.find(f"prod")
+                imposto = det.find(f"imposto")
                 
-                # Helpers
                 def get_val(node, tag, tipo=str):
                     if node is None: return 0.0 if tipo == float else ""
-                    res = node.find(f"{tag_prefix}{tag}")
+                    res = node.find(f"{tag}")
                     if res is not None and res.text:
                         return float(res.text) if tipo == float else res.text
                     return 0.0 if tipo == float else ""
 
                 def get_pis_cofins(grupo, campo):
                     if imposto is None: return ""
-                    node = imposto.find(f"{tag_prefix}{grupo}")
+                    node = imposto.find(f"{grupo}")
                     if node is not None:
                         for child in node:
-                            res = child.find(f"{tag_prefix}{campo}")
+                            res = child.find(f"{campo}")
                             if res is not None: return res.text
                     return ""
 
                 # Valores ICMS
                 cst_icms, bc_icms, aliq_icms, val_icms = "", 0.0, 0.0, 0.0
                 if imposto is not None:
-                    node_icms = imposto.find(f"{tag_prefix}ICMS")
+                    node_icms = imposto.find(f"ICMS")
                     if node_icms:
                         for child in node_icms:
-                            if child.find(f"{tag_prefix}CST") is not None: cst_icms = child.find(f"{tag_prefix}CST").text
-                            elif child.find(f"{tag_prefix}CSOSN") is not None: cst_icms = child.find(f"{tag_prefix}CSOSN").text
+                            if child.find(f"CST") is not None: cst_icms = child.find(f"CST").text
+                            elif child.find(f"CSOSN") is not None: cst_icms = child.find(f"CSOSN").text
                             
-                            if child.find(f"{tag_prefix}vBC") is not None: bc_icms = float(child.find(f"{tag_prefix}vBC").text)
-                            if child.find(f"{tag_prefix}pICMS") is not None: aliq_icms = float(child.find(f"{tag_prefix}pICMS").text)
-                            if child.find(f"{tag_prefix}vICMS") is not None: val_icms = float(child.find(f"{tag_prefix}vICMS").text)
+                            if child.find(f"vBC") is not None: bc_icms = float(child.find(f"vBC").text)
+                            if child.find(f"pICMS") is not None: aliq_icms = float(child.find(f"pICMS").text)
+                            if child.find(f"vICMS") is not None: val_icms = float(child.find(f"vICMS").text)
 
                 # Valores IPI
                 cst_ipi, aliq_ipi = "", 0.0
                 if imposto is not None:
-                    node_ipi = imposto.find(f"{tag_prefix}IPI")
+                    node_ipi = imposto.find(f"IPI")
                     if node_ipi:
                         for child in node_ipi:
-                            if child.find(f"{tag_prefix}CST") is not None: cst_ipi = child.find(f"{tag_prefix}CST").text
-                            if child.find(f"{tag_prefix}pIPI") is not None: aliq_ipi = float(child.find(f"{tag_prefix}pIPI").text)
+                            if child.find(f"CST") is not None: cst_ipi = child.find(f"CST").text
+                            if child.find(f"pIPI") is not None: aliq_ipi = float(child.find(f"pIPI").text)
 
                 # Difal
                 v_difal = 0.0
                 if imposto is not None:
-                    node_difal = imposto.find(f"{tag_prefix}ICMSUFDest")
-                    if node_difal and node_difal.find(f"{tag_prefix}vICMSUFDest") is not None:
-                        v_difal = float(node_difal.find(f"{tag_prefix}vICMSUFDest").text)
+                    node_difal = imposto.find(f"ICMSUFDest")
+                    if node_difal and node_difal.find(f"vICMSUFDest") is not None:
+                        v_difal = float(node_difal.find(f"vICMSUFDest").text)
 
                 registro = {
                     "Arquivo": arquivo.name,
                     "Número NF": get_val(ide, 'nNF'),
-                    "UF Emit": emit.find(f"{tag_prefix}enderEmit/{tag_prefix}UF").text if emit is not None and emit.find(f"{tag_prefix}enderEmit/{tag_prefix}UF") is not None else "",
-                    "UF Dest": dest.find(f"{tag_prefix}enderDest/{tag_prefix}UF").text if dest is not None and dest.find(f"{tag_prefix}enderDest/{tag_prefix}UF") is not None else "",
+                    "UF Emit": emit.find(f"enderEmit/UF").text if emit is not None and emit.find(f"enderEmit/UF") is not None else "",
+                    "UF Dest": dest.find(f"enderDest/UF").text if dest is not None and dest.find(f"enderDest/UF") is not None else "",
                     "nItem": det.attrib.get('nItem', '0'),
                     "Cód Prod": get_val(prod, 'cProd'),
                     "Desc Prod": get_val(prod, 'xProd'),
@@ -206,7 +203,7 @@ def extrair_tags_com_raio_x(arquivos_upload):
                 itens_validos.append(registro)
 
         except Exception as e:
-            arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": f"Erro de Leitura/Corrompido: {str(e)}"})
+            arquivos_com_erro.append({"Arquivo": arquivo.name, "Motivo": f"Erro de Leitura: {str(e)}"})
 
     return itens_validos, arquivos_com_erro
 
@@ -233,25 +230,26 @@ if (xml_saidas or xml_entradas) and rel_status:
     lista_s, erros_s = extrair_tags_com_raio_x(xml_saidas) if xml_saidas else ([], [])
     lista_e, erros_e = extrair_tags_com_raio_x(xml_entradas) if xml_entradas else ([], [])
     
-    # RELATÓRIO DE ERROS
     total_erros = erros_s + erros_e
     df_erros = pd.DataFrame(total_erros)
     
     if not df_erros.empty:
-        st.error(f"⚠️ {len(df_erros)} arquivos foram ignorados! Veja o motivo abaixo ou baixe o Excel.")
-        with st.expander("Ver lista de ignorados"):
+        st.warning(f"⚠️ {len(df_erros)} arquivos não foram lidos. Veja a aba '❌ Arquivos Ignorados' no Excel.")
+        with st.expander("Ver lista de arquivos ignorados"):
             st.dataframe(df_erros)
 
     df_s = pd.DataFrame(lista_s)
     df_e = pd.DataFrame(lista_e)
 
-    # Processamento de Auditoria (Se tiver saídas válidas)
-    df_icms, df_ipi, df_pc, df_difal = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    # Inicia DFs vazios para evitar erro
+    df_icms = pd.DataFrame()
+    df_ipi = pd.DataFrame()
+    df_pc = pd.DataFrame()
+    df_difal = pd.DataFrame()
 
     if not df_s.empty:
         df_s['AP'] = df_s['Chave de Acesso'].str.replace(r'\D', '', regex=True).map(status_dict).fillna("Pendente")
         
-        # Mapas
         map_tribut_cst, map_tribut_aliq, map_gerencial_cst, map_inter, map_tipi, map_pis_cofins_saida = {}, {}, {}, {}, {}, {}
         
         if not df_tribut.empty:
@@ -266,7 +264,6 @@ if (xml_saidas or xml_entradas) and rel_status:
         if not df_pc_base.empty:
             map_pis_cofins_saida = dict(zip(df_pc_base['NCM'], df_pc_base['CST_SAI']))
 
-        # Auditorias
         # 1. ICMS
         df_icms = df_s.copy()
         def f_analise_cst(row):
@@ -333,12 +330,11 @@ if (xml_saidas or xml_entradas) and rel_status:
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             if not df_e.empty: df_e.to_excel(writer, index=False, sheet_name='Entradas')
             if not df_s.empty: df_s.to_excel(writer, index=False, sheet_name='Saídas')
-            if not df_s.empty: df_icms.to_excel(writer, index=False, sheet_name='ICMS')
-            if not df_s.empty: df_ipi.to_excel(writer, index=False, sheet_name='IPI')
-            if not df_s.empty: df_pc.to_excel(writer, index=False, sheet_name='Pis_Cofins')
-            if not df_s.empty: df_difal.to_excel(writer, index=False, sheet_name='Difal')
+            if not df_icms.empty: df_icms.to_excel(writer, index=False, sheet_name='ICMS')
+            if not df_ipi.empty: df_ipi.to_excel(writer, index=False, sheet_name='IPI')
+            if not df_pc.empty: df_pc.to_excel(writer, index=False, sheet_name='Pis_Cofins')
+            if not df_difal.empty: df_difal.to_excel(writer, index=False, sheet_name='Difal')
             
-            # AQUI ESTÁ A ABA QUE VOCÊ PEDIU
             if not df_erros.empty:
                 df_erros.to_excel(writer, index=False, sheet_name='❌ Arquivos Ignorados')
 
