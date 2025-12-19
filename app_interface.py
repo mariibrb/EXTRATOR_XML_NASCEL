@@ -1,31 +1,27 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
+import streamlit as st
 
-class AppInterface:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Minha Aplicação")
-        self.root.geometry("400x300")
-        
-        self.setup_ui()
+def main():
+    # Configuração da página (Equivalente ao root.title e geometry)
+    st.set_page_config(page_title="Sentinela - Interface", layout="centered")
 
-    def setup_ui(self):
-        # Frame principal
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Label de boas-vindas
-        self.label = ttk.Label(main_frame, text="Bem-vindo ao Sistema", font=("Helvetica", 12))
-        self.label.grid(row=0, column=0, pady=10)
-        
+    # Título principal
+    st.title("Bem-vindo ao Sistema Sentinela")
+    
+    # Subtítulo ou texto informativo
+    st.write("Interface web operacional.")
+
+    # Container para organizar elementos (opcional, para estética)
+    with st.container():
+        st.markdown("---")
         # Botão de Ação
-        self.btn_acao = ttk.Button(main_frame, text="Clique Aqui", command=self.on_button_click)
-        self.btn_acao.grid(row=1, column=0, pady=5)
+        if st.button("Executar Ação"):
+            # Substitui o messagebox.showinfo
+            st.success("Ação executada com sucesso!")
+            st.info("O sistema está processando os dados...")
 
-    def on_button_click(self):
-        messagebox.showinfo("Informação", "Botão clicado com sucesso!")
+    # Rodapé simples
+    st.sidebar.markdown("### Status do Sistema")
+    st.sidebar.success("Online")
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppInterface(root)
-    root.mainloop()
+    main()
