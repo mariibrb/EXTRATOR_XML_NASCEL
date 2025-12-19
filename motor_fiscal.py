@@ -34,7 +34,7 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                     "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0, "ALQ-ICMS": 0.0, "ICMS-ST": 0.0,
                     "CST-PIS": "", "CST-COF": "", "VAL-PIS": 0.0, "VAL-COF": 0.0, "BC-FED": 0.0,
                     "CST-IPI": "", "VAL-IPI": 0.0, "BC-IPI": 0.0, "ALQ-IPI": 0.0, "VAL-DIFAL": 0.0,
-                    "VAL-FCP": 0.0, "VAL-FCPST": 0.0 # Campos novos para a aba ICMS_Destino
+                    "VAL-FCP": 0.0, "VAL-FCPST": 0.0 
                 }
                 if imp is not None:
                     icms_n = imp.find('.//ICMS')
@@ -139,36 +139,3 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
                 else: diag.append("✅ Correto"); acao.append("✅ Correto")
             else: diag.append("✅ Correto"); acao.append("✅ Correto")
         else: diag.append("✅ Correto"); acao.append("✅ Correto")
-        return pd.Series(["; ".join(diag), format_brl(row['VAL-DIFAL']), acao])
-    df_difal[['Diagnóstico', 'DIFAL XML', 'Ação']] = df_difal.apply(audit_difal, axis=1)
-
-    # --- NOVA ABA ICMS_DESTINO (AGRUPADO POR UF) ---
-    df_dest = df_sai.groupby('UF_DEST').agg({
-        'ICMS-ST': 'sum',
-        'VAL-DIFAL': 'sum',
-        'VAL-FCP': 'sum',
-        'VAL-FCPST': 'sum'
-    }).reset_index()
-    df_dest.columns = ['ESTADO', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
-    # Formatação BRL para a nova aba
-    for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']:
-        df_dest[col] = df_dest[col].apply(format_brl)
-
-    # --- ABAS GERENCIAMENTO ---
-    try: df_ge = pd.read_excel(file_ger_ent) if file_ger_ent else pd.DataFrame([{"AVISO": "Não enviado"}])
-    except: df_ge = pd.DataFrame([{"ERRO": "Erro leitura"}])
-    try: df_gs = pd.read_excel(file_ger_sai) if file_ger_sai else pd.DataFrame([{"AVISO": "Não enviado"}])
-    except: df_gs = pd.DataFrame([{"ERRO": "Erro leitura"}])
-
-    mem = io.BytesIO()
-    with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
-        if tem_e: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
-        df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
-        df_icms.to_excel(wr, sheet_name='ICMS', index=False)
-        df_pc.to_excel(wr, sheet_name='PIS_COFINS', index=False)
-        df_ipi.to_excel(wr, sheet_name='IPI', index=False)
-        df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
-        df_dest.to_excel(wr, sheet_name='ICMS_Destino', index=False)
-        df_ge.to_excel(wr, sheet_name='Gerenc. Entradas', index=False)
-        df_gs.to_excel(wr, sheet_name='Gerenc. Saídas', index=False)
-    return mem.getvalue()
