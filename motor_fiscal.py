@@ -156,12 +156,13 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
         for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']: df_dest[col] = df_dest[col].apply(format_brl)
     else: df_dest = pd.DataFrame()
 
-    # --- BLOCO EXCLUSIVO GERENCIAIS ---
+    # --- LEITURA GERENCIAIS COM CABEÇALHO PERSONALIZADO ---
     def read_gerencial(f, cols):
         if not f: return pd.DataFrame()
         try:
             f.seek(0)
             df = pd.read_csv(f, sep=None, engine='python', header=None, dtype={0: str})
+            # Remove a linha se for o cabeçalho original e aplica o novo
             if not str(df.iloc[0, 0]).isdigit(): df = df.iloc[1:]
             df.columns = cols
             return df
@@ -169,10 +170,13 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
 
     cols_sai = ['NF','DATA_EMISSAO','CNPJ','Ufp','VC','AC','CFOP','COD_ITEM','VUNIT','QTDE','VITEM','DESC','FRETE','SEG','OUTRAS','VC_ITEM','CST','Coluna2','Coluna3','BC_ICMS','ALIQ_ICMS','ICMS','BC_ICMSST','ICMSST','IPI','CST_PIS','BC_PIS','PIS','CST_COF','BC_COF','COF']
     cols_ent = ['NUM_NF','DATA_EMISSAO','CNPJ','UF','VLR_NF','AC','CFOP','COD_PROD','DESCR','NCM','UNID','VUNIT','QTDE','VPROD','DESC','FRETE','SEG','DESP','VC','CST-ICMS','Coluna2','BC-ICMS','VLR-ICMS','BC-ICMS-ST','ICMS-ST','VLR_IPI','CST_PIS','BC_PIS','VLR_PIS','CST_COF','BC_COF','VLR_COF']
-    df_ge = read_gerencial(file_ger_ent, cols_ent); df_gs = read_gerencial(file_ger_sai, cols_sai)
+    
+    df_ge = read_gerencial(file_ger_ent, cols_ent)
+    df_gs = read_gerencial(file_ger_sai, cols_sai)
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
+        # Gravação das abas de Auditoria e XMLs
         if not df_ent.empty: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
         if not df_sai.empty: df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
         if not df_icms_audit.empty: df_icms_audit.to_excel(wr, sheet_name='ICMS', index=False)
@@ -180,6 +184,18 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
         if not df_ipi.empty: df_ipi.to_excel(wr, sheet_name='IPI', index=False)
         if not df_difal.empty: df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
         if not df_dest.empty: df_dest.to_excel(wr, sheet_name='ICMS_Destino', index=False)
+        
+        # Gravação das abas Gerenciais
         if not df_ge.empty: df_ge.to_excel(wr, sheet_name='Gerenc. Entradas', index=False)
         if not df_gs.empty: df_gs.to_excel(wr, sheet_name='Gerenc. Saídas', index=False)
+
+        # AJUSTE DE FORMATO DAS CÉLULAS (Aba Gerencial)
+        workbook = wr.book
+        fmt_texto = workbook.add_format({'num_format': '@'}) # Força formato Texto
+        
+        if 'Gerenc. Entradas' in wr.sheets:
+            wr.sheets['Gerenc. Entradas'].set_column('A:A', 15, fmt_texto) # Coluna NF/NUM_NF como Texto
+        if 'Gerenc. Saídas' in wr.sheets:
+            wr.sheets['Gerenc. Saídas'].set_column('A:A', 15, fmt_texto) # Coluna NF/NUM_NF como Texto
+            
     return mem.getvalue()
