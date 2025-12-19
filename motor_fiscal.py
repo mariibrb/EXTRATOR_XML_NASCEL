@@ -89,7 +89,7 @@ def gerar_excel_final(df_ent, df_sai):
 
         def format_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        def auditoria_logica(row):
+        def auditoria_explicativa(row):
             if "Cancelada" in str(row['STATUS']):
                 return pd.Series(["NF Cancelada", "R$ 0,00", "R$ 0,00", "NF Cancelada", "R$ 0,00", "Não se aplica"])
 
@@ -97,7 +97,7 @@ def gerar_excel_final(df_ent, df_sai):
             info_ncm = base_t[base_t['NCM_KEY'] == ncm_str]
             
             if info_ncm.empty:
-                return pd.Series([f"NCM {ncm_str} não localizado na Base de Dados", format_brl(row['VLR-ICMS']), "R$ 0,00", "Cadastrar NCM na planilha Base_ICMS.xlsx", "R$ 0,00", "Não permitido"])
+                return pd.Series([f"NCM {ncm_str} não encontrado na planilha 'Base_ICMS.xlsx'", format_brl(row['VLR-ICMS']), "R$ 0,00", "Cadastrar NCM na base de dados para validar", "R$ 0,00", "Não permitido"])
 
             cst_esp = str(info_ncm.iloc[0, 2]).zfill(2)
             is_interna = row['UF_EMIT'] == row['UF_DEST']
@@ -108,24 +108,24 @@ def gerar_excel_final(df_ent, df_sai):
 
             if cst_atual == "60":
                 if row['VLR-ICMS'] > 0:
-                    mensagens.append(f"CST 060 com destaque indevido: XML trouxe {format_brl(row['VLR-ICMS'])}")
+                    mensagens.append(f"CST 060 com destaque indevido: XML trouxe {format_brl(row['VLR-ICMS'])}, mas este código exige imposto zerado")
                 if ncm_str not in ncms_ent_st:
-                    mensagens.append(f"Analisar: NCM {ncm_str} sem histórico de ST na Entrada")
+                    mensagens.append(f"Analisar: NCM {ncm_str} sem histórico de entrada com ST (Verificado nos XMLs de Entrada)")
                 aliq_esp = 0.0
             else:
                 if aliq_esp > 0 and row['VLR-ICMS'] == 0:
-                    mensagens.append(f"Imposto não destacado: Esperado {aliq_esp}% conforme Base")
+                    mensagens.append(f"Imposto não destacado: Base_ICMS exige {aliq_esp}% para este NCM")
                 if cst_atual != cst_esp:
-                    mensagens.append(f"CST Divergente: XML {cst_atual} vs Base Interna {cst_esp}")
+                    mensagens.append(f"CST Divergente: XML trouxe {cst_atual}, mas a Base_ICMS indica {cst_esp}")
                 if row['ALQ-ICMS'] != aliq_esp and aliq_esp > 0:
-                    mensagens.append(f"Alíquota: Esperada {aliq_esp}% vs Destacada {row['ALQ-ICMS']}%")
+                    mensagens.append(f"Alíquota: Esperada {aliq_esp}% (Base_ICMS) vs Destacada {row['ALQ-ICMS']}% (XML)")
 
             complemento = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_atual != "60") else 0.0
             diag = "; ".join(mensagens) if mensagens else "✅ Correto"
             
             if "Analisar" in diag:
-                acao = "Vincular XML de Entrada com ST ou alterar CST de Saída"
-            elif "destaque indevido" in diag:
+                acao = "Analisar: Vincular XML de Entrada com ST ou alterar CST de Saída"
+            elif "indevido" in diag:
                 acao = "Zerar ICMS no XML e usar CST 060"
             elif "não destacado" in diag or "Alíquota" in diag:
                 acao = "Emitir NF Complementar de ICMS"
@@ -138,7 +138,7 @@ def gerar_excel_final(df_ent, df_sai):
 
             return pd.Series([diag, format_brl(row['VLR-ICMS']), format_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp>0 else 0), acao, format_brl(complemento), cce])
 
-        df_icms_audit[['Diagnóstico Detalhado', 'ICMS XML', 'ICMS Esperado', 'Ação Sugerida', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_logica, axis=1)
+        df_icms_audit[['Diagnóstico Detalhado', 'ICMS XML', 'ICMS Esperado', 'Ação Sugerida', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_explicativa, axis=1)
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
