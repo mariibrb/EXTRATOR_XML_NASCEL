@@ -4,44 +4,41 @@ from motor_fiscal import extrair_dados_xml, gerar_excel_final
 
 st.set_page_config(page_title="Sentinela Fiscal", layout="wide")
 
-# Título original com o Coração Laranja 🧡
+# Menu Lateral (Sidebar) mais delicado
+with st.sidebar:
+    st.title("🛡️ Sentinela 🧡")
+    st.markdown("---")
+    
+    st.subheader("1. Notas Fiscais (XML)")
+    xmls_ent = st.file_uploader("Entradas (Compras)", type=['xml'], accept_multiple_files=True)
+    xmls_sai = st.file_uploader("Saídas (Vendas)", type=['xml'], accept_multiple_files=True)
+    
+    st.markdown("---")
+    
+    st.subheader("2. Gerenciamento")
+    file_gerenc_ent = st.file_uploader("Gerenc. Entradas", type=['xlsx'], key="ger_ent")
+    file_gerenc_sai = st.file_uploader("Gerenc. Saídas", type=['xlsx'], key="ger_sai")
+    
+    st.markdown("---")
+    processar = st.button("🚀 Processar Relatório")
+
+# Área Principal
 st.title("🛡️ Sentinela Fiscal 🧡")
-st.markdown("---")
+st.info("Aguardando o processamento dos arquivos via menu lateral.")
 
-# Seção de XMLs (Mantida como era)
-st.subheader("1. Upload de Notas Fiscais (XML)")
-col_xml_e, col_xml_s = st.columns(2)
-
-with col_xml_e:
-    xmls_ent = st.file_uploader("XMLs de Entrada (Compras)", type=['xml'], accept_multiple_files=True)
-with col_xml_s:
-    xmls_sai = st.file_uploader("XMLs de Saída (Vendas)", type=['xml'], accept_multiple_files=True)
-
-# Acréscimo dos campos de Gerenciamento conforme solicitado
-st.markdown("---")
-st.subheader("2. Planilhas de Gerenciamento")
-col_ger_e, col_ger_s = st.columns(2)
-
-with col_ger_e:
-    file_gerenc_ent = st.file_uploader("Upload Planilha Gerenc. Entradas", type=['xlsx'], key="ger_ent")
-with col_ger_s:
-    file_gerenc_sai = st.file_uploader("Upload Planilha Gerenc. Saídas", type=['xlsx'], key="ger_sai")
-
-st.markdown("---")
-
-if st.button("🚀 Processar e Gerar Relatório"):
+if processar:
     if not xmls_sai:
-        st.error("Por favor, envie ao menos os XMLs de Saída para processar.")
+        st.error("Por favor, envie ao menos os XMLs de Saída no menu lateral.")
     else:
-        with st.spinner("Processando dados e gerando auditoria..."):
-            # Extração dos dados dos XMLs
+        with st.spinner("Processando auditoria... 🧡"):
+            # Extração dos dados
             df_e = extrair_dados_xml(xmls_ent, "ENTRADA") if xmls_ent else None
             df_s = extrair_dados_xml(xmls_sai, "SAIDA")
             
-            # Geração do Excel Final mantendo as auditorias e as novas planilhas
+            # Geração do Excel Final
             excel_binario = gerar_excel_final(df_e, df_s, file_gerenc_ent, file_gerenc_sai)
             
-            st.success("Processamento concluído! 🧡")
+            st.success("Processamento concluído com sucesso! 🧡")
             st.download_button(
                 label="📥 Baixar Relatório Fiscal Completo",
                 data=excel_binario,
