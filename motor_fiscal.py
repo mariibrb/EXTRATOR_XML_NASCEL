@@ -59,15 +59,13 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                             if nodo.find('pICMS') is not None: linha["ALQ-ICMS"] = float(nodo.find('pICMS').text)
                             if nodo.find('vICMSST') is not None: linha["ICMS-ST"] = float(nodo.find('vICMSST').text)
                     
-                    # PIS
+                    # PIS/COFINS
                     pis = imp.find('.//PIS')
                     if pis is not None:
                         for p in pis:
                             if p.find('CST') is not None: linha["CST-PIS"] = p.find('CST').text.zfill(2)
                             if p.find('vBC') is not None: linha["BC-FED"] = float(p.find('vBC').text)
                             if p.find('vPIS') is not None: linha["VAL-PIS"] = float(p.find('vPIS').text)
-                    
-                    # COFINS
                     cof = imp.find('.//COFINS')
                     if cof is not None:
                         for c in cof:
@@ -94,9 +92,11 @@ def gerar_excel_final(df_ent, df_sai):
     def limpar_txt(v): return str(v).replace('.0', '').strip()
     def format_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     
+    # Carregamento das bases
     try:
         base_icms = pd.read_excel(".streamlit/Base_ICMS.xlsx")
         base_icms['NCM_KEY'] = base_icms.iloc[:, 0].apply(limpar_txt).str.replace(r'\D', '', regex=True).str.zfill(8)
+        base_icms['CST_KEY'] = base_icms.iloc[:, 2].apply(limpar_txt).str.zfill(2)
     except: base_icms = pd.DataFrame()
 
     try:
@@ -107,25 +107,49 @@ def gerar_excel_final(df_ent, df_sai):
 
     if df_sai is None or df_sai.empty: df_sai = pd.DataFrame([{"AVISO": "Sem dados"}])
 
-    # --- ABA ICMS (PRESERVADA - APROVAÇÃO 2) ---
-    df_icms = df_sai.copy()
-    def audit_icms(row):
-        ncm = str(row['NCM']).zfill(8)
-        info = base_icms[base_icms['NCM_KEY'] == ncm] if not base_icms.empty else pd.DataFrame()
-        st_ent = "-" # Mantendo conforme lógica aprovada
-        if info.empty: return pd.Series([st_ent, "NCM não mapeado", format_brl(row['VLR-ICMS']), "Cadastrar NCM"])
-        cst_esp = str(info.iloc[0, 2]).zfill(2)
-        diag = f"CST XML {row['CST-ICMS']} vs Base {cst_esp}" if str(row['CST-ICMS']) != cst_esp else "✅ Correto"
-        acao = f"Cc-e (Corrigir CST para {cst_esp})" if str(row['CST-ICMS']) != cst_esp else "✅ Correto"
-        return pd.Series([st_ent, diag, format_brl(row['VLR-ICMS']), acao])
-    df_icms[['ST na Entrada', 'Diagnóstico', 'ICMS XML', 'Ação']] = df_icms.apply(audit_icms, axis=1)
+    # --- ABA ICMS (RESTAURADA INTEGRALMENTE CONFORME SEU CÓDIGO) ---
+    df_icms_audit = df_sai.copy()
+    tem_entradas = df_ent is not None and not df_ent.empty
+    ncms_ent_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist() if tem_entradas else []
 
-    # --- ABA PIS_COFINS (PRESERVADA - APROVAÇÃO 2) ---
+    def auditoria_final_icms(row):
+        ncm_atual = str(row['NCM']).strip().zfill(8)
+        info_ncm = base_icms[base_icms['NCM_KEY'] == ncm_atual]
+        st_entrada = ("✅ ST Localizado" if ncm_atual in ncms_ent_st else "❌ Sem ST na Entrada") if tem_entradas else "⚠️ Entrada não enviada"
+        if info_ncm.empty:
+            return pd.Series([st_entrada, f"NCM {ncm_atual} Ausente na Base", format_brl(row['VLR-ICMS']), "R$ 0,00", "Cadastrar NCM na Base", "R$ 0,00"])
+        cst_esp = str(info_ncm.iloc[0]['CST_KEY'])
+        aliq_esp = float(info_ncm.iloc[0, 3]) if row['UF_EMIT'] == row['UF_DEST'] else (float(info_ncm.iloc[0, 29]) if len(info_ncm.columns) > 29 else 12.0)
+        cst_xml = str(row['CST-ICMS']).strip().zfill(2)
+        diag_list, acoes_list = [], []
+        if cst_xml == "60":
+            if row['VLR-ICMS'] > 0: 
+                diag_list.append(f"CST 60 com destaque: {format_brl(row['VLR-ICMS'])} | Esperado R$ 0,00")
+                acoes_list.append("Estorno de ICMS destacado indevidamente")
+            aliq_esp = 0.0
+        else:
+            if aliq_esp > 0 and row['VLR-ICMS'] == 0: 
+                diag_list.append(f"ICMS: Destacado R$ 0,00 | Esperado {aliq_esp}%")
+                acoes_list.append("Emitir NF Complementar de Imposto")
+            if cst_xml != cst_esp: 
+                diag_list.append(f"CST: Destacado {cst_xml} | Esperado {cst_esp}")
+                acoes_list.append(f"Cc-e (Corrigir CST para {cst_esp})")
+            if abs(row['ALQ-ICMS'] - aliq_esp) > 0.01 and aliq_esp > 0: 
+                diag_list.append(f"Aliq: Destacada {row['ALQ-ICMS']}% | Esperada {aliq_esp}%")
+                acoes_list.append("Ajustar parâmetro de Alíquota no ERP")
+        comp_num = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_xml != "60") else 0.0
+        res = "; ".join(diag_list) if diag_list else "✅ Correto"
+        acao = " + ".join(list(dict.fromkeys(acoes_list))) if acoes_list else "✅ Correto"
+        return pd.Series([st_entrada, res, format_brl(row['VLR-ICMS']), format_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp > 0 else 0), acao, format_brl(comp_num)])
+
+    df_icms_audit[['ST na Entrada', 'Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento']] = df_icms_audit.apply(auditoria_final_icms, axis=1)
+
+    # --- ABA PIS_COFINS (PRESERVADA) ---
     df_pc = df_sai.copy()
     def audit_pc(row):
         ncm = str(row['NCM']).zfill(8)
         info = base_pc[base_pc['NCM_KEY'] == ncm] if not base_pc.empty else pd.DataFrame()
-        if info.empty: return pd.Series(["NCM não mapeado", "-", "-", "Cadastrar NCM"])
+        if info.empty: return pd.Series(["NCM não mapeado", f"PIS: {row['CST-PIS']} / COF: {row['CST-COF']}", "-", "Cadastrar NCM"])
         try:
             cst_p_esp = str(info.iloc[0]['CST_PIS']).zfill(2)
             cst_c_esp = str(info.iloc[0]['CST_COFINS']).zfill(2)
@@ -133,55 +157,40 @@ def gerar_excel_final(df_ent, df_sai):
         diag_list, acao_list = [], []
         if str(row['CST-PIS']) != cst_p_esp:
             diag_list.append(f"PIS: XML {row['CST-PIS']} vs Base {cst_p_esp}")
-            acao_list.append(f"Cc-e (Corrigir CST PIS para {cst_p_esp})")
+            acao_list.append(f"Cc-e (CST PIS para {cst_p_esp})")
         if str(row['CST-COF']) != cst_c_esp:
             diag_list.append(f"COF: XML {row['CST-COF']} vs Base {cst_c_esp}")
-            acao_list.append(f"Cc-e (Corrigir CST COF para {cst_c_esp})")
-        res_diag = "; ".join(diag_list) if diag_list else "✅ CSTs Corretos"
-        res_acao = " + ".join(acao_list) if acao_list else "✅ Correto"
-        return pd.Series([res_diag, f"PIS: {row['CST-PIS']} / COF: {row['CST-COF']}", f"PIS: {cst_p_esp} / COF: {cst_c_esp}", res_acao])
+            acao_list.append(f"Cc-e (CST COF para {cst_c_esp})")
+        return pd.Series(["; ".join(diag_list) if diag_list else "✅ CSTs Corretos", f"PIS: {row['CST-PIS']} / COF: {row['CST-COF']}", f"PIS: {cst_p_esp} / COF: {cst_c_esp}", " + ".join(acao_list) if acao_list else "✅ Correto"])
     df_pc[['Diagnóstico', 'CST XML (P/C)', 'CST Esperado (P/C)', 'Ação']] = df_pc.apply(audit_pc, axis=1)
 
-    # --- ABA IPI (LAPIDADA - ESPERADO VS DESTACADO + CST) ---
+    # --- ABA IPI (LAPIDADA - VALORES + CST) ---
     df_ipi = df_sai.copy()
     def audit_ipi(row):
         ncm = str(row['NCM']).zfill(8)
         info = base_pc[base_pc['NCM_KEY'] == ncm] if not base_pc.empty else pd.DataFrame()
         if info.empty: return pd.Series(["NCM não mapeado", row['CST-IPI'], "-", format_brl(row['VAL-IPI']), "R$ 0,00", "Cadastrar NCM"])
-        
         try:
             cst_i_esp = str(info.iloc[0]['CST_IPI']).zfill(2)
             aliq_i_esp = float(info.iloc[0]['ALQ_IPI'])
         except: cst_i_esp, aliq_i_esp = "50", 0.0
-
         v_esp = row['BC-IPI'] * (aliq_i_esp / 100)
         diag_ipi, acao_ipi = [], []
-
         if str(row['CST-IPI']) != cst_i_esp:
-            diag_ipi.append(f"CST XML {row['CST-IPI']} vs Base {cst_i_esp}")
+            diag_ipi.append(f"CST: XML {row['CST-IPI']} vs Base {cst_i_esp}")
             acao_ipi.append(f"Cc-e (CST IPI para {cst_i_esp})")
-        
         if abs(row['VAL-IPI'] - v_esp) > 0.01:
-            diag_ipi.append(f"Valor XML {format_brl(row['VAL-IPI'])} vs Esp. {format_brl(v_esp)}")
+            diag_ipi.append(f"Valor: XML {format_brl(row['VAL-IPI'])} vs Esp. {format_brl(v_esp)}")
             acao_ipi.append("Emitir NF Complementar" if row['VAL-IPI'] < v_esp else "Estorno de IPI")
-
-        return pd.Series([
-            "; ".join(diag_ipi) if diag_ipi else "✅ Correto",
-            row['CST-IPI'], cst_i_esp,
-            format_brl(row['VAL-IPI']), format_brl(v_esp),
-            " + ".join(acao_ipi) if acao_ipi else "✅ Correto"
-        ])
-
+        return pd.Series(["; ".join(diag_ipi) if diag_ipi else "✅ Correto", row['CST-IPI'], cst_i_esp, format_brl(row['VAL-IPI']), format_brl(v_esp), " + ".join(acao_ipi) if acao_ipi else "✅ Correto"])
     df_ipi[['Diagnóstico', 'CST XML', 'CST Base', 'IPI XML', 'IPI Esperado', 'Ação']] = df_ipi.apply(audit_ipi, axis=1)
-
-    # --- DIFAL ---
-    df_difal = df_sai.copy()
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
+        if tem_entradas: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
         df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
-        df_icms.to_excel(wr, sheet_name='ICMS', index=False)
+        df_icms_audit.to_excel(wr, sheet_name='ICMS', index=False)
         df_pc.to_excel(wr, sheet_name='PIS_COFINS', index=False)
         df_ipi.to_excel(wr, sheet_name='IPI', index=False)
-        df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
+        df_sai.to_excel(wr, sheet_name='DIFAL', index=False)
     return mem.getvalue()
