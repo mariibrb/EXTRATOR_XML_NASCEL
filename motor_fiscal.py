@@ -38,9 +38,8 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                 prod = det.find('prod')
                 imp = det.find('imposto')
                 
-                # BLINDAGEM DO NCM: Remove tudo que não é número e garante 8 dígitos
-                ncm_bruto = buscar('NCM', prod)
-                ncm_limpo = re.sub(r'\D', '', ncm_bruto).zfill(8)
+                # Blindagem total do NCM (8 dígitos sempre)
+                ncm_limpo = re.sub(r'\D', '', buscar('NCM', prod)).zfill(8)
                 
                 linha = {
                     "CHAVE_ACESSO": chave_acesso, "NUM_NF": num_nf,
@@ -49,7 +48,7 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                     "CFOP": buscar('CFOP', prod), "NCM": ncm_limpo,
                     "COD_PROD": buscar('cProd', prod), "DESCR": buscar('xProd', prod),
                     "VPROD": float(buscar('vProd', prod)) if buscar('vProd', prod) else 0.0,
-                    "FRETE": float(buscar('vFrete', prod)) if buscar('vFrete', prod) else 0.0,
+                    "FRETE": float(buscar('vSeg', prod)) if buscar('vSeg', prod) else 0.0,
                     "SEG": float(buscar('vSeg', prod)) if buscar('vSeg', prod) else 0.0,
                     "DESP": float(buscar('vOutro', prod)) if buscar('vOutro', prod) else 0.0,
                     "DESC": float(buscar('vDesc', prod)) if buscar('vDesc', prod) else 0.0,
@@ -77,7 +76,6 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
 def gerar_excel_final(df_ent, df_sai):
     try:
         base_t = pd.read_excel(".streamlit/Base_ICMS.xlsx")
-        # BLINDAGEM DO NCM NA BASE: Garante que seja string de 8 dígitos sem pontos
         base_t['NCM_KEY'] = base_t.iloc[:, 0].astype(str).str.replace(r'\D', '', regex=True).str.zfill(8).str.strip()
     except: 
         base_t = pd.DataFrame(columns=['NCM_KEY'])
@@ -94,10 +92,11 @@ def gerar_excel_final(df_ent, df_sai):
 
     def format_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    def auditoria_final(row):
+    def auditoria_independente(row):
         ncm_atual = str(row['NCM']).strip().zfill(8)
         info_ncm = base_t[base_t['NCM_KEY'] == ncm_atual]
         
+        # 1. Validação Primária: NCM na Base
         if info_ncm.empty:
             return pd.Series([f"NCM {ncm_atual} Ausente na Base", format_brl(row['VLR-ICMS']), "R$ 0,00", "Cadastrar NCM", "R$ 0,00", "Não"])
 
@@ -108,13 +107,18 @@ def gerar_excel_final(df_ent, df_sai):
         diag_list = []
         cst_xml = str(row['CST-ICMS']).strip()
 
+        # 2. Validação de Regras de Saída (Independente de entradas)
         if cst_xml == "60":
             if row['VLR-ICMS'] > 0: 
-                diag_list.append(f"CST 60 com destaque: {format_brl(row['VLR-ICMS'])} | Esperado R$ 0,00")
-            if not tem_entradas:
-                diag_list.append("Analisar: CST 60 (Entradas ausentes)")
-            elif ncm_atual not in ncms_ent_st:
+                diag_list.append(f"CST 60: Destacado {format_brl(row['VLR-ICMS'])} | Esperado R$ 0,00")
+            
+            # O "Bónus": Só alerta se as entradas foram enviadas
+            if tem_entradas and ncm_atual not in ncms_ent_st:
                 diag_list.append(f"Analisar: NCM {ncm_atual} sem estoque ST")
+            elif not tem_entradas:
+                # Não é um erro, apenas um aviso de que o bónus não foi usado
+                diag_list.append("Info: ST não validado (Sem Entradas)")
+            
             aliq_esp = 0.0
         else:
             if aliq_esp > 0 and row['VLR-ICMS'] == 0: 
@@ -127,8 +131,8 @@ def gerar_excel_final(df_ent, df_sai):
         complemento_num = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_xml != "60") else 0.0
         res = "; ".join(diag_list) if diag_list else "✅ Correto"
         
+        # Ações Diretas
         if res == "✅ Correto": acao = "✅ Correto"
-        elif "ausentes" in res: acao = "Subir Entradas (Opcional)"
         elif "Analisar" in res: acao = "Validar Entrada"
         elif "CST" in res and complemento_num == 0: acao = "Cc-e"
         else: acao = "Complemento/Estorno"
@@ -136,7 +140,7 @@ def gerar_excel_final(df_ent, df_sai):
         cce = "Sim" if acao == "Cc-e" else "Não"
         return pd.Series([res, format_brl(row['VLR-ICMS']), format_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp > 0 else 0), acao, format_brl(complemento_num), cce])
 
-    df_icms_audit[['Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_final, axis=1)
+    df_icms_audit[['Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_independente, axis=1)
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
