@@ -84,7 +84,9 @@ def gerar_excel_final(df_ent, df_sai):
     df_icms_audit = df_sai.copy() if not df_sai.empty else pd.DataFrame()
 
     if not df_icms_audit.empty:
-        ncms_ent_60 = df_ent[df_ent['CST-ICMS']=="60"]['NCM'].unique().tolist() if not df_ent.empty else []
+        ncms_ent_st = []
+        if not df_ent.empty:
+            ncms_ent_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist()
 
         def auditoria_completa(row):
             if "Cancelada" in str(row['STATUS']):
@@ -96,32 +98,38 @@ def gerar_excel_final(df_ent, df_sai):
             is_interna = row['UF_EMIT'] == row['UF_DEST']
             aliq_esp = float(info_ncm.iloc[0, 3]) if not info_ncm.empty and is_interna else (float(info_ncm.iloc[0, 29]) if not info_ncm.empty and len(info_ncm.columns) > 29 else 12.0)
 
-            if cst_esp == "60": aliq_esp = 0.0
-
             mensagens = []
             cst_atual = str(row['CST-ICMS']).strip()
 
-            if cst_atual == "60" and row['VLR-ICMS'] > 0:
-                mensagens.append("CST 060 com destaque indevido")
+            # --- REGRA SUPREMA PARA CST 60 ---
+            if cst_atual == "60":
+                # Se for 60, NÃO PODE cobrar imposto. Se estiver zerado, está PERFEITO.
+                if row['VLR-ICMS'] > 0:
+                    mensagens.append("CST 060 com destaque indevido")
+                
+                # Mas continua checando se o NCM veio de uma entrada com ST
+                if row['NCM'] not in ncms_ent_st:
+                    mensagens.append("Validar: NCM em CST 60 sem entrada correspondente")
+                
+                # Força a alíquota esperada para zero para não dar conflito nas outras fórmulas
+                aliq_esp = 0.0
             
-            if aliq_esp > 0 and row['VLR-ICMS'] == 0:
-                mensagens.append("Imposto não destacado")
+            else:
+                # SÓ AQUI ele checa se o imposto foi omitido (quando o CST NÃO é 60)
+                if aliq_esp > 0 and row['VLR-ICMS'] == 0:
+                    mensagens.append("Imposto não destacado")
 
-            if cst_atual == "60" and row['NCM'] not in ncms_ent_60:
-                mensagens.append("CST 60 sem entrada correspondente")
+                # Validações de CST e Alíquota para os demais casos
+                if cst_atual != cst_esp and cst_esp != "NCM não encontrado":
+                    mensagens.append(f"CST Errado (XML:{cst_atual}|Base:{cst_esp})")
+                
+                if row['ALQ-ICMS'] != aliq_esp and aliq_esp > 0:
+                    mensagens.append(f"Aliq. Errada ({row['ALQ-ICMS']}% vs {aliq_esp}%)")
 
-            if cst_atual != cst_esp and cst_esp != "NCM não encontrado":
-                mensagens.append(f"CST Errado (XML:{cst_atual}|Base:{cst_esp})")
-            
-            if row['ALQ-ICMS'] != aliq_esp and aliq_esp > 0:
-                mensagens.append(f"Aliq. Errada ({row['ALQ-ICMS']}% vs {aliq_esp}%)")
-
-            complemento = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if row['ALQ-ICMS'] < aliq_esp else 0.0
+            complemento = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_atual != "60") else 0.0
             
             diag = "; ".join(mensagens) if mensagens else "✅ Correto"
-            
-            # Ajuste de frases conforme solicitado (Removido "Urgente" e encurtado)
-            acao = "Estornar ICMS destacado" if "CST 060" in diag else ("NF Complementar" if "não destacado" in diag else "Manter conforme XML")
+            acao = "Estornar ICMS destacado" if "CST 060 com destaque" in diag else ("NF Complementar" if "não destacado" in diag else ("Revisar entrada do NCM" if "Validar" in diag else "Manter conforme XML"))
             cce = "Cc-e disponível" if "CST" in diag and "060" not in diag else "Não permitido"
 
             def f_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
