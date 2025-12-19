@@ -20,8 +20,17 @@ st.markdown("""
     .stButton>button { background-color: #FF6F00; color: white; border-radius: 25px; font-weight: bold; width: 100%; border: none; padding: 12px; }
     .stButton>button:hover { background-color: #E65100; transform: scale(1.02); }
     .stFileUploader { padding: 5px; border: 1px dashed #FF6F00; border-radius: 10px; }
+    /* Botão de Limpeza */
+    .clear-btn > div > button { 
+        background-color: #f8f9fa !important; color: #dc3545 !important; border: 1px solid #dc3545 !important; 
+        padding: 5px !important; font-size: 0.8rem !important; height: auto !important; width: auto !important;
+    }
     </style>
 """, unsafe_allow_html=True)
+
+# --- INICIALIZAÇÃO DE ESTADO PARA LIMPEZA ---
+if 'xml_ent_key' not in st.session_state: st.session_state.xml_ent_key = 0
+if 'xml_sai_key' not in st.session_state: st.session_state.xml_sai_key = 0
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -69,14 +78,26 @@ st.markdown("---")
 col_ent, col_sai = st.columns(2, gap="large")
 
 with col_ent:
-    st.markdown("### 📥 1. Entradas")
-    xml_ent = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="ue")
+    head_e1, head_e2 = st.columns([3, 1])
+    with head_e1: st.markdown("### 📥 1. Entradas")
+    with head_e2:
+        if st.button("🗑️ Limpar", key="btn_clear_ent", help="Excluir todos os XMLs de Entrada"):
+            st.session_state.xml_ent_key += 1
+            st.rerun()
+            
+    xml_ent = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key=f"xml_e_{st.session_state.xml_ent_key}")
     aut_ent = st.file_uploader("🔍 Autenticidade Entrada", type=['xlsx'], key="ae")
     ger_ent = st.file_uploader("📊 Gerenc. Entradas (CSV)", type=['csv'], key="ge")
 
 with col_sai:
-    st.markdown("### 📤 2. Saídas")
-    xml_sai = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="us")
+    head_s1, head_s2 = st.columns([3, 1])
+    with head_s1: st.markdown("### 📤 2. Saídas")
+    with head_s2:
+        if st.button("🗑️ Limpar", key="btn_clear_sai", help="Excluir todos os XMLs de Saída"):
+            st.session_state.xml_sai_key += 1
+            st.rerun()
+
+    xml_sai = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key=f"xml_s_{st.session_state.xml_sai_key}")
     aut_sai = st.file_uploader("🔍 Autenticidade Saída", type=['xlsx'], key="as")
     ger_sai = st.file_uploader("📊 Gerenc. Saídas (CSV)", type=['csv'], key="gs")
 
@@ -107,7 +128,5 @@ if st.button("🚀 EXECUTAR AUDITORIA", type="primary", use_container_width=True
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
-                else:
-                    st.error("Erro: O relatório foi gerado vazio. Verifique os arquivos enviados.")
         except Exception as e:
             st.error(f"Erro crítico no processamento: {e}")
