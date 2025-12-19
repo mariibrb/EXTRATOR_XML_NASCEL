@@ -27,3 +27,5 @@ class AppInterface:
 
 if __name__ == "__main__":
     root = tk.Tk()
+    app = AppInterface(root)
+    root.mainloop()
