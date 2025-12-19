@@ -147,26 +147,27 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     df_dest.columns = ['ESTADO', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
     for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']: df_dest[col] = df_dest[col].apply(format_brl)
 
-    # --- ABAS GERENCIAMENTO (LEITURA ROBUSTA) ---
-    def read_file(f):
+    # --- ABAS GERENCIAMENTO (FORÇANDO CABEÇALHOS) ---
+    def read_manager(f, cols):
         if not f: return pd.DataFrame([{"AVISO": "Não enviado"}])
         try:
             f.seek(0)
-            # Lê em bytes para detectar codificação
-            raw = f.read()
-            # Tenta UTF-8 ou ISO-8859-1 para evitar caracteres estranhos
-            for enc in ['utf-8-sig', 'latin1', 'iso-8859-1']:
+            raw = f.read(); encodings = ['utf-8-sig', 'latin1', 'iso-8859-1']
+            for enc in encodings:
                 try:
-                    # Detecta separador (vírgula ou ponto-e-vírgula)
                     txt = raw.decode(enc)
                     sep = ';' if txt.count(';') > txt.count(',') else ','
-                    return pd.read_csv(io.StringIO(txt), sep=sep, engine='python')
+                    # Lê ignorando o cabeçalho original e forçando os nomes das colunas enviados
+                    return pd.read_csv(io.StringIO(txt), sep=sep, header=0, names=cols, engine='python')
                 except: continue
-            return pd.read_csv(io.BytesIO(raw), sep=None, engine='python')
+            return pd.read_csv(io.BytesIO(raw), sep=None, engine='python', names=cols, header=0)
         except: return pd.DataFrame([{"ERRO": "Falha na leitura do CSV"}])
 
-    df_ge = read_file(file_ger_ent)
-    df_gs = read_file(file_ger_sai)
+    cols_sai = ['NF','DATA_EMISSAO','CNPJ','Ufp','VC','AC','CFOP','COD_ITEM','VUNIT','QTDE','VITEM','DESC','FRETE','SEG','OUTRAS','VC_ITEM','CST','Coluna2','Coluna3','BC_ICMS','ALIQ_ICMS','ICMS','BC_ICMSST','ICMSST','IPI','CST_PIS','BC_PIS','PIS','CST_COF','BC_COF','COF']
+    cols_ent = ['NUM_NF','DATA_EMISSAO','CNPJ','UF','VLR_NF','AC','CFOP','COD_PROD','DESCR','NCM','UNID','VUNIT','QTDE','VPROD','DESC','FRETE','SEG','DESP','VC','CST-ICMS','Coluna2','BC-ICMS','VLR-ICMS','BC-ICMS-ST','ICMS-ST','VLR_IPI','CST_PIS','BC_PIS','VLR_PIS','CST_COF','BC_COF','VLR_COF']
+
+    df_ge = read_manager(file_ger_ent, cols_ent)
+    df_gs = read_manager(file_ger_sai, cols_sai)
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
