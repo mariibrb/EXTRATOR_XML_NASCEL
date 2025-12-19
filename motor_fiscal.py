@@ -6,7 +6,6 @@ import streamlit as st
 
 def extrair_dados_xml(files, fluxo, df_autenticidade=None):
     dados_lista = []
-    # Mudança lógica: Se não houver arquivos, retorna um DataFrame vazio mas permite que o fluxo continue
     if not files: 
         return pd.DataFrame()
 
@@ -39,7 +38,9 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                 prod = det.find('prod')
                 imp = det.find('imposto')
                 
-                ncm_limpo = re.sub(r'\D', '', buscar('NCM', prod))
+                # BLINDAGEM DO NCM: Remove tudo que não é número e garante 8 dígitos
+                ncm_bruto = buscar('NCM', prod)
+                ncm_limpo = re.sub(r'\D', '', ncm_bruto).zfill(8)
                 
                 linha = {
                     "CHAVE_ACESSO": chave_acesso, "NUM_NF": num_nf,
@@ -71,28 +72,22 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
             progresso.progress((i + 1) / total_arquivos)
         except: continue
     
-    df_res = pd.DataFrame(dados_lista)
-    if not df_res.empty and df_autenticidade is not None:
-        df_res['CHAVE_ACESSO'] = df_res['CHAVE_ACESSO'].astype(str).str.strip()
-        map_auth = dict(zip(df_autenticidade.iloc[:, 0].astype(str).str.strip(), df_autenticidade.iloc[:, 5]))
-        df_res['STATUS'] = df_res['CHAVE_ACESSO'].map(map_auth).fillna("Não encontrada")
-    return df_res
+    return pd.DataFrame(dados_lista)
 
 def gerar_excel_final(df_ent, df_sai):
     try:
         base_t = pd.read_excel(".streamlit/Base_ICMS.xlsx")
-        base_t['NCM_KEY'] = base_t.iloc[:, 0].astype(str).str.replace(r'\D', '', regex=True).str.strip()
+        # BLINDAGEM DO NCM NA BASE: Garante que seja string de 8 dígitos sem pontos
+        base_t['NCM_KEY'] = base_t.iloc[:, 0].astype(str).str.replace(r'\D', '', regex=True).str.zfill(8).str.strip()
     except: 
         base_t = pd.DataFrame(columns=['NCM_KEY'])
 
-    # Se não houver saídas, não há o que auditar
-    if df_sai.empty: 
+    if df_sai is None or df_sai.empty: 
         return None
 
     df_icms_audit = df_sai.copy()
-
-    # Identifica se o usuário optou por não carregar entradas
     tem_entradas = df_ent is not None and not df_ent.empty
+    
     ncms_ent_st = []
     if tem_entradas:
         ncms_ent_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist()
@@ -100,10 +95,7 @@ def gerar_excel_final(df_ent, df_sai):
     def format_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def auditoria_final(row):
-        if "Cancelada" in str(row['STATUS']):
-            return pd.Series(["NF Cancelada", "R$ 0,00", "R$ 0,00", "✅ Correto", "R$ 0,00", "N/A"])
-
-        ncm_atual = str(row['NCM']).strip()
+        ncm_atual = str(row['NCM']).strip().zfill(8)
         info_ncm = base_t[base_t['NCM_KEY'] == ncm_atual]
         
         if info_ncm.empty:
@@ -119,13 +111,10 @@ def gerar_excel_final(df_ent, df_sai):
         if cst_xml == "60":
             if row['VLR-ICMS'] > 0: 
                 diag_list.append(f"CST 60 com destaque: {format_brl(row['VLR-ICMS'])} | Esperado R$ 0,00")
-            
-            # Alerta condicional: Só busca no estoque se as entradas foram enviadas
             if not tem_entradas:
-                diag_list.append("Analisar: CST 60 (Entradas não enviadas para validação)")
+                diag_list.append("Analisar: CST 60 (Entradas ausentes)")
             elif ncm_atual not in ncms_ent_st:
-                diag_list.append(f"Analisar: NCM {ncm_atual} sem estoque ST (Entradas)")
-            
+                diag_list.append(f"Analisar: NCM {ncm_atual} sem estoque ST")
             aliq_esp = 0.0
         else:
             if aliq_esp > 0 and row['VLR-ICMS'] == 0: 
@@ -138,22 +127,20 @@ def gerar_excel_final(df_ent, df_sai):
         complemento_num = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_xml != "60") else 0.0
         res = "; ".join(diag_list) if diag_list else "✅ Correto"
         
-        # Ações Logicas Curtas
         if res == "✅ Correto": acao = "✅ Correto"
-        elif "não enviadas" in res: acao = "Subir Entradas (Opcional)"
+        elif "ausentes" in res: acao = "Subir Entradas (Opcional)"
         elif "Analisar" in res: acao = "Validar Entrada"
         elif "CST" in res and complemento_num == 0: acao = "Cc-e"
         else: acao = "Complemento/Estorno"
 
         cce = "Sim" if acao == "Cc-e" else "Não"
-
         return pd.Series([res, format_brl(row['VLR-ICMS']), format_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp > 0 else 0), acao, format_brl(complemento_num), cce])
 
     df_icms_audit[['Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_final, axis=1)
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
-        df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False) if tem_entradas else None
+        if tem_entradas: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
         df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
         df_icms_audit.to_excel(wr, sheet_name='ICMS', index=False)
         for aba in ['IPI', 'PIS_COFINS', 'DIFAL']: df_sai.to_excel(wr, sheet_name=aba, index=False)
