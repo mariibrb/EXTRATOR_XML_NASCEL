@@ -96,36 +96,36 @@ def gerar_excel_final(df_ent, df_sai):
             is_interna = row['UF_EMIT'] == row['UF_DEST']
             aliq_esp = float(info_ncm.iloc[0, 3]) if not info_ncm.empty and is_interna else (float(info_ncm.iloc[0, 29]) if not info_ncm.empty and len(info_ncm.columns) > 29 else 12.0)
 
+            if cst_esp == "60": aliq_esp = 0.0
+
             mensagens = []
-            
-            # --- NOVA: ANALISE DE OMISSÃO DE IMPOSTO ---
-            if aliq_esp > 0 and row['VLR-ICMS'] == 0:
-                mensagens.append("❌ CRÍTICO: Imposto não destacado (deveria ser tributado)")
-
-            # Validações CFOP e NCM
-            if is_interna and str(row['CFOP']).startswith('6'): mensagens.append("⚠️ CFOP 6xxx em operação Interna")
-            if not is_interna and str(row['CFOP']).startswith('5'): mensagens.append("⚠️ CFOP 5xxx em operação Interestadual")
-            if len(str(row['NCM'])) != 8: mensagens.append("❌ NCM Incompleto")
-
-            # Validações de CST e Alíquota
             cst_atual = str(row['CST-ICMS']).strip()
-            if cst_atual == "60" and row['NCM'] not in ncms_ent_60: mensagens.append("Divergente — CST 60 sem entrada")
-            elif cst_atual != cst_esp and cst_esp != "NCM não encontrado": mensagens.append(f"CST Errado (XML:{cst_atual}|Base:{cst_esp})")
-            if row['ALQ-ICMS'] != aliq_esp and cst_esp != "NCM não encontrado" and aliq_esp > 0:
+
+            if cst_atual == "60" and row['VLR-ICMS'] > 0:
+                mensagens.append("CST 060 com destaque indevido")
+            
+            if aliq_esp > 0 and row['VLR-ICMS'] == 0:
+                mensagens.append("Imposto não destacado")
+
+            if cst_atual == "60" and row['NCM'] not in ncms_ent_60:
+                mensagens.append("CST 60 sem entrada correspondente")
+
+            if cst_atual != cst_esp and cst_esp != "NCM não encontrado":
+                mensagens.append(f"CST Errado (XML:{cst_atual}|Base:{cst_esp})")
+            
+            if row['ALQ-ICMS'] != aliq_esp and aliq_esp > 0:
                 mensagens.append(f"Aliq. Errada ({row['ALQ-ICMS']}% vs {aliq_esp}%)")
 
             complemento = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if row['ALQ-ICMS'] < aliq_esp else 0.0
             
-            # Se a base estiver zerada mas deveria ter imposto, calcula complemento sobre o valor do produto
-            if row['VLR-ICMS'] == 0 and aliq_esp > 0:
-                complemento = (row['VPROD'] + row['FRETE']) * (aliq_esp / 100)
-
             diag = "; ".join(mensagens) if mensagens else "✅ Correto"
-            acao = "Emitir NF Complementar Urgente" if "CRÍTICO" in diag else ("Revisar tributação" if "Divergente" in diag else "Manter conforme XML")
-            cce = "Não permitido para valores" if "CRÍTICO" in diag or "Aliq" in diag else "Cc-e disponível"
+            
+            # Ajuste de frases conforme solicitado (Removido "Urgente" e encurtado)
+            acao = "Estornar ICMS destacado" if "CST 060" in diag else ("NF Complementar" if "não destacado" in diag else "Manter conforme XML")
+            cce = "Cc-e disponível" if "CST" in diag and "060" not in diag else "Não permitido"
 
             def f_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            return pd.Series([diag, f_brl(row['VLR-ICMS']), f_brl(row['BC-ICMS'] * aliq_esp / 100 if row['BC-ICMS']>0 else (row['VPROD']*(aliq_esp/100))), acao, f_brl(complemento), cce])
+            return pd.Series([diag, f_brl(row['VLR-ICMS']), f_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp>0 else 0), acao, f_brl(complemento), cce])
 
         df_icms_audit[['Diagnóstico Detalhado', 'ICMS XML', 'ICMS Esperado', 'Ação Sugerida', 'Complemento', 'Cc-e']] = df_icms_audit.apply(auditoria_completa, axis=1)
 
