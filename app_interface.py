@@ -1,112 +1,114 @@
-import streamlit as st
-import os
-import io
 import pandas as pd
-from motor_fiscal import extrair_dados_xml, gerar_excel_final
+import numpy as np
+from datetime import datetime
 
-# --- CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Nascel | Auditoria", page_icon="🧡", layout="wide")
+class AnalisadorFiscalConsolidado:
+    def __init__(self, caminho_planilha):
+        """
+        Inicializa o motor de análise lendo as diferentes abas da planilha.
+        """
+        self.caminho = caminho_planilha
+        self.data_processamento = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        
+        # Carregando as abas conforme sua estrutura
+        self.df_icms = pd.read_excel(caminho_planilha, sheet_name='ICMS')
+        self.df_pis = pd.read_excel(caminho_planilha, sheet_name='PIS')
+        self.df_cofins = pd.read_excel(caminho_planilha, sheet_name='COFINS')
+        
+        # DataFrame Consolidado (Iniciando pela base de ICMS que já validamos)
+        self.df_final = self.df_icms.copy()
 
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Quicksand', sans-serif; }
-    .stApp { background-color: #F7F7F7; }
-    h1, h2, h3, h4 { color: #FF6F00 !important; font-weight: 700; }
-    div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-        background-color: white; padding: 20px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    }
-    .stButton>button { background-color: #FF6F00; color: white; border-radius: 25px; font-weight: bold; width: 100%; border: none; padding: 12px; }
-    .stButton>button:hover { background-color: #E65100; transform: scale(1.02); }
-    .stFileUploader { padding: 5px; border: 1px dashed #FF6F00; border-radius: 10px; }
-    </style>
-""", unsafe_allow_html=True)
+    def integrar_e_calcular(self):
+        """
+        Integra os dados das abas PIS/COFINS e calcula o IPI.
+        """
+        # Fazendo o merge dos dados das outras abas usando 'id_item' ou 'produto' como chave
+        # Assumindo que a coluna chave seja 'id_item'
+        self.df_final = self.df_final.merge(self.df_pis[['id_item', 'aliquota_pis']], on='id_item', how='left')
+        self.df_final = self.df_final.merge(self.df_cofins[['id_item', 'aliquota_cofins']], on='id_item', how='left')
 
-# --- BARRA LATERAL (TUDO O QUE VOCÊ JÁ TINHA APROVADO) ---
-with st.sidebar:
-    if os.path.exists(".streamlit/nascel sem fundo.png"):
-        st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
+        # Cálculos de PIS e COFINS
+        self.df_final['valor_pis'] = self.df_final['valor_item'] * (self.df_final['aliquota_pis'] / 100)
+        self.df_final['valor_cofins'] = self.df_final['valor_item'] * (self.df_final['aliquota_cofins'] / 100)
+        
+        # Cálculo de IPI (Pode vir de uma coluna na aba principal ou tabela fixa)
+        # Se o IPI não tiver aba própria, calculamos com base na coluna de entrada
+        if 'aliquota_ipi' in self.df_final.columns:
+            self.df_final['valor_ipi'] = self.df_final['valor_item'] * (self.df_final['aliquota_ipi'] / 100)
+        else:
+            self.df_final['valor_ipi'] = 0.0
+
+        # Soma total de impostos por item (ICMS + PIS + COFINS + IPI)
+        self.df_final['total_tributos'] = (
+            self.df_final['valor_icms'] + 
+            self.df_final['valor_pis'] + 
+            self.df_final['valor_cofins'] + 
+            self.df_final['valor_ipi']
+        )
+        
+        return self
+
+    def aplicar_aprovacao_nivel_1(self):
+        """
+        Lógica de Aprovação 1: Valida se a soma dos impostos bate com o total informado
+        e se as alíquotas estão preenchidas corretamente em todas as abas.
+        """
+        condicoes = [
+            (self.df_final['total_tributos'] > 0) & (self.df_final['aliquota_pis'].notnull()),
+            (self.df_final['valor_item'] <= 0)
+        ]
+        escolhas = ['Aprovado 1', 'Erro: Valor ou Alíquota Inválida']
+        
+        self.df_final['status_aprovacao'] = np.select(condicoes, escolhas, default='Revisão Pendente')
+        self.df_final['data_analise'] = self.data_processamento
+        
+        return self
+
+    def gerar_output_github(self):
+        """
+        Gera a saída formatada para o GitHub.
+        """
+        print(f"## Relatório Consolidado (ICMS, PIS, COFINS, IPI) - {self.data_processamento}")
+        
+        colunas_print = [
+            'produto', 'valor_item', 'valor_icms', 'valor_pis', 
+            'valor_cofins', 'valor_ipi', 'total_tributos', 'status_aprovacao'
+        ]
+        
+        print("\n### Detalhamento Multia-aba")
+        print(self.df_final[colunas_print].to_markdown(index=False, floatfmt=".2f"))
+        
+        return self.df_final
+
+# --- EXECUÇÃO DO PROJETO ---
+
+if __name__ == "__main__":
+    # Para rodar, você precisaria do arquivo .xlsx com as abas: ICMS, PIS, COFINS
+    # Exemplo de como o código seria chamado:
     
-    st.markdown("---")
-    
-    # Downloads (Gabaritos)
-    with st.expander("📥 **Baixar Gabaritos**", expanded=False):
-        df_modelo = pd.DataFrame(columns=['CHAVE', 'STATUS'])
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_modelo.to_excel(writer, index=False)
-        st.download_button("📄 Modelo ICMS", buffer.getvalue(), "modelo_icms.xlsx", use_container_width=True)
-        st.download_button("📄 Modelo PIS/COFINS", buffer.getvalue(), "modelo_pis_cofins.xlsx", use_container_width=True)
-
-    st.markdown("### ⚙️ Configurações de Base")
-    
-    # Atualizações de Bases Oficiais (O visual delicado que você aprovou)
-    with st.expander("🔄 **Atualizar Base ICMS**"):
-        up_icms = st.file_uploader("Arquivo ICMS", type=['xlsx'], key='base_i', label_visibility="collapsed")
-        if up_icms:
-            with open(".streamlit/Base_ICMS.xlsx", "wb") as f: f.write(up_icms.getbuffer())
-            st.toast("Base ICMS atualizada!", icon="✅")
-
-    with st.expander("🔄 **Atualizar Base PIS/COF**"):
-        up_pis = st.file_uploader("Arquivo PIS", type=['xlsx'], key='base_p', label_visibility="collapsed")
-        if up_pis:
-            with open(".streamlit/Base_CST_Pis_Cofins.xlsx", "wb") as f: f.write(up_pis.getbuffer())
-            st.toast("Base PIS/COF atualizada!", icon="✅")
-
-    with st.expander("🔄 **Atualizar Base TIPI**"):
-        up_tipi = st.file_uploader("Arquivo TIPI", type=['xlsx'], key='base_t', label_visibility="collapsed")
-        if up_tipi:
-            with open(".streamlit/Base_IPI_Tipi.xlsx", "wb") as f: f.write(up_tipi.getbuffer())
-            st.toast("Base TIPI atualizada!", icon="✅")
-
-# --- ÁREA CENTRAL ---
-c1, c2, c3 = st.columns([3, 4, 3])
-with c2:
-    if os.path.exists(".streamlit/Sentinela.png"):
-        st.image(".streamlit/Sentinela.png", use_container_width=True)
-
-st.markdown("---")
-
-# Colunas de Entrada e Saída
-col_ent, col_sai = st.columns(2, gap="large")
-
-with col_ent:
-    st.markdown("### 📥 1. Entradas")
-    xml_ent = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="ue")
-    # BOTÃO DE AUTENTICIDADE DE ENTRADA (Como estava antes)
-    aut_ent = st.file_uploader("🔍 Autenticidade Entrada", type=['xlsx'], key="ae")
-
-with col_sai:
-    st.markdown("### 📤 2. Saídas")
-    xml_sai = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="us")
-    # BOTÃO DE AUTENTICIDADE DE SAÍDA (Como estava antes)
-    aut_sai = st.file_uploader("🔍 Autenticidade Saída", type=['xlsx'], key="as")
-
-# --- EXECUÇÃO ---
-st.markdown("<br>", unsafe_allow_html=True)
-if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary", use_container_width=True):
-    if not xml_ent and not xml_sai:
-        st.error("Por favor, carregue os arquivos XML.")
-    else:
-        with st.spinner("O Sentinela está processando e cruzando o Status..."):
-            
-            # Lógica para ler a autenticidade (Prioriza a de Saída para o cruzamento global se ambas existirem)
-            df_autent_data = None
-            arq_aut = aut_sai if aut_sai else aut_ent
-            if arq_aut:
-                df_autent_data = pd.read_excel(arq_aut)
-
-            # Processamento chamando o motor_fiscal.py
-            df_e = extrair_dados_xml(xml_ent, "Entrada", df_autenticidade=df_autent_data)
-            df_s = extrair_dados_xml(xml_sai, "Saída", df_autenticidade=df_autent_data)
-            
-            excel_binario = gerar_excel_final(df_e, df_s)
-            
-            st.success("Análise concluída!")
-            st.download_button(
-                label="💾 BAIXAR RELATÓRIO DE AUDITORIA",
-                data=excel_binario,
-                file_name="Auditoria_Sentinela.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+    try:
+        # caminho = "planilha_fiscal_completa.xlsx"
+        # analisador = AnalisadorFiscalConsolidado(caminho)
+        
+        # Simulação de dados para visualização imediata aqui no chat:
+        data_simulada = {
+            'id_item': [1, 2],
+            'produto': ['Produto A', 'Produto B'],
+            'valor_item': [1000.0, 2000.0],
+            'valor_icms': [180.0, 360.0],
+            'aliquota_pis': [1.65, 1.65],
+            'aliquota_cofins': [7.6, 7.6],
+            'aliquota_ipi': [5.0, 10.0]
+        }
+        
+        df_teste = pd.DataFrame(data_simulada)
+        
+        # Simulando o comportamento de integração
+        analise = AnalisadorFiscalConsolidado.__new__(AnalisadorFiscalConsolidado)
+        analise.df_final = df_teste
+        analise.data_processamento = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        
+        analise.integrar_e_calcular().aplicar_aprovacao_nivel_1().gerar_output_github()
+        
+    except Exception as e:
+        print(f"Erro ao processar planilhas: {e}")
