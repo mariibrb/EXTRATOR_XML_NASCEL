@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import xml.etree.ElementTree as ET
 import re
 import io
@@ -36,10 +37,15 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                     "AC": int(det.attrib.get('nItem', '0')), "CFOP": buscar('CFOP', prod), "NCM": ncm_limpo,
                     "COD_PROD": buscar('cProd', prod), "DESCR": buscar('xProd', prod),
                     "VPROD": float(buscar('vProd', prod)) if buscar('vProd', prod) else 0.0,
-                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0, "ALQ-ICMS": 0.0, "ICMS-ST": 0.0
+                    # Campos ICMS
+                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0, "ALQ-ICMS": 0.0, "ICMS-ST": 0.0,
+                    # Campos PIS/COFINS/IPI/DIFAL
+                    "VBC-PIS": 0.0, "VAL-PIS": 0.0, "VBC-COF": 0.0, "VAL-COF": 0.0,
+                    "VBC-IPI": 0.0, "VAL-IPI": 0.0, "VAL-DIFAL": 0.0
                 }
 
                 if imp is not None:
+                    # ICMS
                     icms_nodo = imp.find('.//ICMS')
                     if icms_nodo is not None:
                         for nodo in icms_nodo:
@@ -49,6 +55,30 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                             if nodo.find('vICMS') is not None: linha["VLR-ICMS"] = float(nodo.find('vICMS').text)
                             if nodo.find('pICMS') is not None: linha["ALQ-ICMS"] = float(nodo.find('pICMS').text)
                             if nodo.find('vICMSST') is not None: linha["ICMS-ST"] = float(nodo.find('vICMSST').text)
+                    
+                    # PIS
+                    pis = imp.find('.//PIS')
+                    if pis is not None:
+                        if pis.find('.//vBC') is not None: linha["VBC-PIS"] = float(pis.find('.//vBC').text)
+                        if pis.find('.//vPIS') is not None: linha["VAL-PIS"] = float(pis.find('.//vPIS').text)
+                    
+                    # COFINS
+                    cof = imp.find('.//COFINS')
+                    if cof is not None:
+                        if cof.find('.//vBC') is not None: linha["VBC-COF"] = float(cof.find('.//vBC').text)
+                        if cof.find('.//vCOFINS') is not None: linha["VAL-COF"] = float(cof.find('.//vCOFINS').text)
+
+                    # IPI
+                    ipi = imp.find('.//IPI')
+                    if ipi is not None:
+                        if ipi.find('.//vBC') is not None: linha["VBC-IPI"] = float(ipi.find('.//vBC').text)
+                        if ipi.find('.//vIPI') is not None: linha["VAL-IPI"] = float(ipi.find('.//vIPI').text)
+
+                    # DIFAL
+                    difal = imp.find('.//ICMSUFDest')
+                    if difal is not None:
+                        if difal.find('vICMSUFDest') is not None: linha["VAL-DIFAL"] = float(difal.find('vICMSUFDest').text)
+
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
@@ -65,6 +95,7 @@ def gerar_excel_final(df_ent, df_sai):
     if df_sai is None or df_sai.empty: 
         df_sai = pd.DataFrame([{"AVISO": "Nenhum dado de Saída processado"}])
 
+    # --- AUDITORIA ICMS ---
     df_icms_audit = df_sai.copy()
     tem_entradas = df_ent is not None and not df_ent.empty
     ncms_ent_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist() if tem_entradas else []
@@ -75,19 +106,13 @@ def gerar_excel_final(df_ent, df_sai):
         if "AVISO" in row: return pd.Series(["-"] * 6)
         ncm_atual = str(row['NCM']).strip().zfill(8)
         info_ncm = base_t[base_t['NCM_KEY'] == ncm_atual]
-        
         st_entrada = ("✅ ST Localizado" if ncm_atual in ncms_ent_st else "❌ Sem ST na Entrada") if tem_entradas else "⚠️ Entrada não enviada"
-
         if info_ncm.empty:
             return pd.Series([st_entrada, f"NCM {ncm_atual} Ausente na Base", format_brl(row['VLR-ICMS']), "R$ 0,00", "Cadastrar NCM na Base", "R$ 0,00"])
-
         cst_esp = str(info_ncm.iloc[0]['CST_KEY'])
         aliq_esp = float(info_ncm.iloc[0, 3]) if row['UF_EMIT'] == row['UF_DEST'] else (float(info_ncm.iloc[0, 29]) if len(info_ncm.columns) > 29 else 12.0)
         cst_xml = str(row['CST-ICMS']).strip().zfill(2)
-
-        diag_list = []
-        acoes_list = []
-
+        diag_list, acoes_list = [], []
         if cst_xml == "60":
             if row['VLR-ICMS'] > 0: 
                 diag_list.append(f"CST 60 com destaque: {format_brl(row['VLR-ICMS'])} | Esperado R$ 0,00")
@@ -103,22 +128,36 @@ def gerar_excel_final(df_ent, df_sai):
             if abs(row['ALQ-ICMS'] - aliq_esp) > 0.01 and aliq_esp > 0: 
                 diag_list.append(f"Aliq: Destacada {row['ALQ-ICMS']}% | Esperada {aliq_esp}%")
                 acoes_list.append("Ajustar parâmetro de Alíquota no ERP")
-
         comp_num = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_xml != "60") else 0.0
-        
         res = "; ".join(diag_list) if diag_list else "✅ Correto"
         acao = " + ".join(list(dict.fromkeys(acoes_list))) if acoes_list else "✅ Correto"
-
         return pd.Series([st_entrada, res, format_brl(row['VLR-ICMS']), format_brl(row['BC-ICMS'] * aliq_esp / 100 if aliq_esp > 0 else 0), acao, format_brl(comp_num)])
 
-    # Colunas finais conforme solicitado: sem a coluna Cc-e
-    col_audit = ['ST na Entrada', 'Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento']
-    df_icms_audit[col_audit] = df_icms_audit.apply(auditoria_final, axis=1)
+    df_icms_audit[['ST na Entrada', 'Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento']] = df_icms_audit.apply(auditoria_final, axis=1)
+
+    # --- ABAS DE TRIBUTOS FEDERAIS E DIFAL ---
+    # PIS e COFINS
+    df_pis_cofins = df_sai.copy()
+    if not df_pis_cofins.empty and "AVISO" not in df_pis_cofins:
+        df_pis_cofins['Análise PIS'] = np.where(df_pis_cofins['VAL-PIS'] > 0, "✅ Destacado", "ℹ️ Sem destaque")
+        df_pis_cofins['Análise COFINS'] = np.where(df_pis_cofins['VAL-COF'] > 0, "✅ Destacado", "ℹ️ Sem destaque")
+
+    # IPI
+    df_ipi = df_sai.copy()
+    if not df_ipi.empty and "AVISO" not in df_ipi:
+        df_ipi['Análise IPI'] = "" # Coluna vazia conforme solicitado
+
+    # DIFAL
+    df_difal = df_sai.copy()
+    if not df_difal.empty and "AVISO" not in df_difal:
+        df_difal['Análise DIFAL'] = np.where((df_difal['UF_EMIT'] != df_difal['UF_DEST']) & (df_difal['VAL-DIFAL'] == 0), "❌ DIFAL não localizado", "✅ OK ou Interna")
 
     mem = io.BytesIO()
     with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
         if tem_entradas: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
         df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
         df_icms_audit.to_excel(wr, sheet_name='ICMS', index=False)
-        for aba in ['IPI', 'PIS_COFINS', 'DIFAL']: df_sai.to_excel(wr, sheet_name=aba, index=False)
+        df_ipi.to_excel(wr, sheet_name='IPI', index=False)
+        df_pis_cofins.to_excel(writer, sheet_name='PIS_COFINS', index=False)
+        df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
     return mem.getvalue()
