@@ -8,7 +8,7 @@ st.set_page_config(page_title="Sentinela Fiscal", layout="wide")
 st.title("🛡️ Sentinela Fiscal 🧡")
 st.markdown("---")
 
-# Seção 1: Upload de Notas Fiscais (XML)
+# Seção de XMLs (Mantida como era)
 st.subheader("1. Upload de Notas Fiscais (XML)")
 col_xml_e, col_xml_s = st.columns(2)
 
@@ -17,9 +17,8 @@ with col_xml_e:
 with col_xml_s:
     xmls_sai = st.file_uploader("XMLs de Saída (Vendas)", type=['xml'], accept_multiple_files=True)
 
+# Acréscimo dos campos de Gerenciamento conforme solicitado
 st.markdown("---")
-
-# Seção 2: Gerenciamento (Acrescentado conforme pedido)
 st.subheader("2. Planilhas de Gerenciamento")
 col_ger_e, col_ger_s = st.columns(2)
 
