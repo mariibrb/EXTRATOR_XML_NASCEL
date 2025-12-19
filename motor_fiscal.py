@@ -59,10 +59,10 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
                             cst = nodo.find('CST') if nodo.find('CST') is not None else nodo.find('CSOSN')
                             if cst is not None: linha["CST-ICMS"] = cst.text.zfill(2)
                             if nodo.find('vBC') is not None: linha["BC-ICMS"] = float(nodo.find('vBC').text)
-                            if nodo.find('vICMS') is not None: linha["vICMS"] = float(nodo.find('vICMS').text)
+                            if nodo.find('vICMS') is not None: linha["VLR-ICMS"] = float(nodo.find('vICMS').text)
                             if nodo.find('pICMS') is not None: linha["ALQ-ICMS"] = float(nodo.find('pICMS').text)
+                            if nodo.find('pRedBC') is not None: linha["pRedBC"] = float(nodo.find('pRedBC').text)
 
-                linha["VLR-ICMS"] = linha.get("vICMS", 0.0)
                 linha["VC"] = linha["VPROD"] + linha["ICMS-ST"] + linha["DESP"] - linha["DESC"]
                 dados_lista.append(linha)
             progresso.progress((i + 1) / total_arquivos)
@@ -93,13 +93,10 @@ def gerar_excel_final(df_ent, df_sai):
                 return pd.Series(["NF Cancelada", "R$ 0,00", "R$ 0,00", "NF Cancelada", "R$ 0,00", "Não se aplica"])
 
             info_ncm = base_t[base_t['NCM_KEY'] == str(row['NCM']).strip()]
+            cst_esp = str(info_ncm.iloc[0, 2]).zfill(2) if not info_ncm.empty else "NCM não encontrado"
             
-            if info_ncm.empty:
-                return pd.Series(["NCM não encontrado", f"R$ {row['VLR-ICMS']:,.2f}", "R$ 0,00", "Cadastrar NCM na planilha Base_ICMS.xlsx", "R$ 0,00", "Não permitido"])
-
-            cst_esp = str(info_ncm.iloc[0, 2]).zfill(2)
             is_interna = row['UF_EMIT'] == row['UF_DEST']
-            aliq_esp = float(info_ncm.iloc[0, 3]) if is_interna else (float(info_ncm.iloc[0, 29]) if len(info_ncm.columns) > 29 else 12.0)
+            aliq_esp = float(info_ncm.iloc[0, 3]) if not info_ncm.empty and is_interna else (float(info_ncm.iloc[0, 29]) if not info_ncm.empty and len(info_ncm.columns) > 29 else 12.0)
 
             mensagens = []
             cst_atual = str(row['CST-ICMS']).strip()
@@ -113,7 +110,7 @@ def gerar_excel_final(df_ent, df_sai):
             else:
                 if aliq_esp > 0 and row['VLR-ICMS'] == 0:
                     mensagens.append("Imposto não destacado")
-                if cst_atual != cst_esp:
+                if cst_atual != cst_esp and cst_esp != "NCM não encontrado":
                     mensagens.append(f"CST Errado (XML:{cst_atual}|Base:{cst_esp})")
                 if row['ALQ-ICMS'] != aliq_esp and aliq_esp > 0:
                     mensagens.append(f"Aliq. Errada ({row['ALQ-ICMS']}% vs {aliq_esp}%)")
@@ -121,7 +118,7 @@ def gerar_excel_final(df_ent, df_sai):
             complemento = (aliq_esp - row['ALQ-ICMS']) * row['BC-ICMS'] / 100 if (row['ALQ-ICMS'] < aliq_esp and cst_atual != "60") else 0.0
             diag = "; ".join(mensagens) if mensagens else "✅ Correto"
             
-            # --- ATRIBUIÇÃO LÓGICA DE AÇÃO ---
+            # --- MENSAGENS DE AÇÃO MAIS LÓGICAS ---
             if "sem histórico" in diag:
                 acao = "Vincular XML de Entrada com ST ou alterar CST de Saída"
             elif "destaque indevido" in diag:
