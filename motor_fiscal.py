@@ -6,7 +6,7 @@ import streamlit as st
 
 def extrair_dados_xml(files, fluxo):
     """
-    Leitura binária ultra-resistente.
+    Leitura de XMLs com replicação integral de dados.
     """
     dados_lista = []
     if not files: 
@@ -22,6 +22,7 @@ def extrair_dados_xml(files, fluxo):
             conteudo_bruto = f.read()
             texto_xml = conteudo_bruto.decode('utf-8', errors='replace')
             
+            # Limpeza de cabeçalhos e nomes técnicos do XML
             texto_xml = re.sub(r'<\?xml[^?]*\?>', '', texto_xml)
             texto_xml = re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', texto_xml)
             
@@ -31,15 +32,19 @@ def extrair_dados_xml(files, fluxo):
                 alvo = raiz.find(f'.//{caminho}')
                 return alvo.text if alvo is not None and alvo.text is not None else ""
 
+            # Dados básicos da Nota
             num_nf = buscar('nNF')
             data_emi = buscar('dhEmi')
-            vlr_nf = buscar('vNF')
+            total_nf = root.find('.//total/ICMSTot')
+            vlr_nf = total_nf.find('vNF').text if total_nf is not None and total_nf.find('vNF') is not None else "0.0"
             
+            # Identificação do Parceiro
             bloco_parceiro = 'emit' if fluxo == "Entrada" else 'dest'
             parceiro = root.find(f'.//{bloco_parceiro}')
             cnpj = buscar('CNPJ', parceiro) if parceiro is not None else ""
             uf = buscar('UF', parceiro) if parceiro is not None else ""
 
+            # Varredura dos Itens
             itens = root.findall('.//det')
             for det in itens:
                 prod = det.find('prod')
@@ -73,7 +78,7 @@ def extrair_dados_xml(files, fluxo):
                 }
 
                 if imp is not None:
-                    # ICMS
+                    # ICMS completo
                     icms_data = imp.find('.//ICMS')
                     if icms_data is not None:
                         for nodo in icms_data:
@@ -84,27 +89,21 @@ def extrair_dados_xml(files, fluxo):
                             if nodo.find('vBCST') is not None: linha["BC-ICMS-ST"] = float(nodo.find('vBCST').text)
                             if nodo.find('vICMSST') is not None: linha["ICMS-ST"] = float(nodo.find('vICMSST').text)
 
-                    # PIS/COFINS/IPI
+                    # IPI, PIS, COFINS
                     vipi = imp.find('.//vIPI')
                     if vipi is not None: linha["VLR_IPI"] = float(vipi.text)
                     vpis = imp.find('.//vPIS')
                     if vpis is not None: linha["VLR_PIS"] = float(vpis.text)
                     vcof = imp.find('.//vCOFINS')
                     if vcof is not None: linha["VLR_COF"] = float(vcof.text)
-                    
-                    # DIFAL / FCP
-                    fcp = imp.find('.//vFCP')
-                    if fcp is not None: linha["FCP"] = float(fcp.text)
-                    uf_dest = imp.find('.//vICMSUFDest')
-                    if uf_dest is not None: linha["ICMS UF Dest"] = float(uf_dest.text)
 
                 linha["VC"] = linha["VPROD"] + linha["ICMS-ST"] + linha["VLR_IPI"] + linha["DESP"] - linha["DESC"]
                 dados_lista.append(linha)
             
             container_status.text(f"📊 Processando {i+1} de {total_arquivos}...")
             progresso.progress((i + 1) / total_arquivos)
-
-        except: continue
+        except:
+            continue
     
     container_status.empty()
     progresso.empty()
@@ -112,7 +111,7 @@ def extrair_dados_xml(files, fluxo):
 
 def gerar_excel_final(df_ent, df_sai):
     """
-    Replicação INTEGRAL das Saídas para as abas de tributos.
+    Replicação INTEGRAL das Saídas para todas as abas técnicas.
     """
     memoria = io.BytesIO()
     with pd.ExcelWriter(memoria, engine='xlsxwriter') as escritor:
@@ -120,13 +119,16 @@ def gerar_excel_final(df_ent, df_sai):
         if not df_ent.empty: 
             df_ent.to_excel(escritor, sheet_name='ENTRADAS', index=False)
         
-        # Aba Saídas (Base para todas as outras)
+        # Abas baseadas na Saída (Replicação Total)
         if not df_sai.empty: 
             df_sai.to_excel(escritor, sheet_name='SAIDAS', index=False)
-            
-            # REPLICAÇÃO TOTAL (Sem filtros)
-            # Levamos exatamente o mesmo conteúdo para cada aba técnica
             df_sai.to_excel(escritor, sheet_name='ICMS', index=False)
             df_sai.to_excel(escritor, sheet_name='IPI', index=False)
             df_sai.to_excel(escritor, sheet_name='PIS_COFINS', index=False)
-            df_sai.to_excel(escritor, sheet_name
+            df_sai.to_excel(escritor, sheet_name='DIFAL', index=False)
+        else:
+            # Garante que as abas existam mesmo sem dados
+            for aba in ['SAIDAS', 'ICMS', 'IPI', 'PIS_COFINS', 'DIFAL']:
+                pd.DataFrame().to_excel(escritor, sheet_name=aba, index=False)
+
+    return memoria.getvalue()
