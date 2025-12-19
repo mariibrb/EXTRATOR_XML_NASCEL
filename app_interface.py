@@ -71,9 +71,12 @@ with col_sai:
     ger_sai = st.file_uploader("📊 Gerenc. Saídas (CSV)", type=['csv'], key="gs")
 
 st.markdown("<br>", unsafe_allow_html=True)
-if st.button("🚀 EXECUTAR AUDITORIA", type="primary", use_container_width=True):
-    if not xml_ent and not xml_sai:
-        st.error("Por favor, carregue os arquivos XML.")
+
+# --- LÓGICA DE EXECUÇÃO FLEXÍVEL ---
+if st.button("🚀 EXECUTAR AUDITORIA / DASHBOARD", type="primary", use_container_width=True):
+    # Agora permite executar se tiver arquivos XML OU arquivos Gerenciais
+    if not (xml_ent or xml_sai or ger_ent or ger_sai):
+        st.error("Por favor, carregue os arquivos (XMLs ou Gerenciais) para processar.")
     else:
         try:
             with st.spinner("O Sentinela está processando... 🧡"):
@@ -81,22 +84,24 @@ if st.button("🚀 EXECUTAR AUDITORIA", type="primary", use_container_width=True
                 arq_aut = aut_sai if aut_sai else aut_ent
                 if arq_aut: df_autent_data = pd.read_excel(arq_aut)
 
-                df_e = extrair_dados_xml(xml_ent, "Entrada", df_autenticidade=df_autent_data)
-                df_s = extrair_dados_xml(xml_sai, "Saída", df_autenticidade=df_autent_data)
+                # Processa XMLs se existirem
+                df_e = extrair_dados_xml(xml_ent, "Entrada", df_autenticidade=df_autent_data) if xml_ent else pd.DataFrame()
+                df_s = extrair_dados_xml(xml_sai, "Saída", df_autenticidade=df_autent_data) if xml_sai else pd.DataFrame()
                 
-                # O motor agora retorna o Excel e os dados do dashboard
+                # Gera o Excel e os dados para o Dash
                 excel_binario, dash_stats = gerar_excel_final(df_e, df_s, file_ger_ent=ger_ent, file_ger_sai=ger_sai)
                 
                 if excel_binario:
-                    st.success("Análise concluída! 🧡")
+                    st.success("Processamento concluído! 🧡")
                     
-                    # --- DASHBOARD VISUAL ---
-                    st.markdown("## 📊 Dashboard de Apuração PIS/COFINS")
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Débitos Totais", f"R$ {dash_stats['total_deb']:,.2f}")
-                    m2.metric("Créditos Totais", f"R$ {dash_stats['total_cred']:,.2f}")
-                    saldo = dash_stats['total_deb'] - dash_stats['total_cred']
-                    m3.metric("Saldo Final", f"R$ {saldo:,.2f}", delta=f"{saldo:,.2f}", delta_color="inverse")
+                    # --- DASHBOARD VISUAL (Baseado nos Gerenciais) ---
+                    if ger_ent or ger_sai:
+                        st.markdown("## 📊 Dashboard de Apuração PIS/COFINS")
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Débitos Totais", f"R$ {dash_stats['total_deb']:,.2f}")
+                        m2.metric("Créditos Totais", f"R$ {dash_stats['total_cred']:,.2f}")
+                        saldo = dash_stats['total_deb'] - dash_stats['total_cred']
+                        m3.metric("Saldo Final", f"R$ {saldo:,.2f}", delta=f"{saldo:,.2f}", delta_color="inverse")
                     
                     st.download_button(
                         label="💾 BAIXAR RELATÓRIO COMPLETO",
