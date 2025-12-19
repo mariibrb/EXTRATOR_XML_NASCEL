@@ -143,24 +143,27 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     df_difal[['Diagnóstico', 'DIFAL XML', 'Ação']] = df_difal.apply(audit_difal, axis=1)
 
     # --- ABA ICMS_DESTINO ---
-    df_dest = df_sai.groupby('UF_DEST').agg({
-        'ICMS-ST': 'sum',
-        'VAL-DIFAL': 'sum',
-        'VAL-FCP': 'sum',
-        'VAL-FCPST': 'sum'
-    }).reset_index()
+    df_dest = df_sai.groupby('UF_DEST').agg({'ICMS-ST': 'sum', 'VAL-DIFAL': 'sum', 'VAL-FCP': 'sum', 'VAL-FCPST': 'sum'}).reset_index()
     df_dest.columns = ['ESTADO', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
-    for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']:
-        df_dest[col] = df_dest[col].apply(format_brl)
+    for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']: df_dest[col] = df_dest[col].apply(format_brl)
 
-    # --- ABAS GERENCIAMENTO ---
+    # --- ABAS GERENCIAMENTO (LEITURA ROBUSTA) ---
     def read_file(f):
         if not f: return pd.DataFrame([{"AVISO": "Não enviado"}])
         try:
             f.seek(0)
-            return pd.read_csv(f, sep=None, engine='python', encoding='utf-8-sig')
-        except:
-            return pd.DataFrame([{"ERRO": "Falha na leitura do CSV"}])
+            # Lê em bytes para detectar codificação
+            raw = f.read()
+            # Tenta UTF-8 ou ISO-8859-1 para evitar caracteres estranhos
+            for enc in ['utf-8-sig', 'latin1', 'iso-8859-1']:
+                try:
+                    # Detecta separador (vírgula ou ponto-e-vírgula)
+                    txt = raw.decode(enc)
+                    sep = ';' if txt.count(';') > txt.count(',') else ','
+                    return pd.read_csv(io.StringIO(txt), sep=sep, engine='python')
+                except: continue
+            return pd.read_csv(io.BytesIO(raw), sep=None, engine='python')
+        except: return pd.DataFrame([{"ERRO": "Falha na leitura do CSV"}])
 
     df_ge = read_file(file_ger_ent)
     df_gs = read_file(file_ger_sai)
