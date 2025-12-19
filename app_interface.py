@@ -6,7 +6,7 @@ from datetime import datetime
 from motor_fiscal import extrair_dados_xml, gerar_excel_final
 
 # --- CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Nascel | Auditoria", page_icon="🧡", layout="wide")
+st.set_page_config(page_title="Sentinela", page_icon="🧡", layout="wide")
 
 st.markdown("""
     <style>
