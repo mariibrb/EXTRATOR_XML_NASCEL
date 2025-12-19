@@ -22,45 +22,65 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (LOGOTIPO E APOIO) ---
+# --- BARRA LATERAL (TUDO O QUE VOCÊ JÁ TINHA APROVADO) ---
 with st.sidebar:
     if os.path.exists(".streamlit/nascel sem fundo.png"):
         st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
+    
     st.markdown("---")
-    with st.expander("📥 **Baixar Modelos**"):
-        df_m = pd.DataFrame(columns=['CHAVE', 'STATUS'])
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='xlsxwriter') as wr: df_m.to_excel(wr, index=False)
-        st.download_button("📄 Modelo Autenticidade", buf.getvalue(), "modelo_autenticidade.xlsx", use_container_width=True)
+    
+    # Downloads (Gabaritos)
+    with st.expander("📥 **Baixar Gabaritos**", expanded=False):
+        df_modelo = pd.DataFrame(columns=['CHAVE', 'STATUS'])
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df_modelo.to_excel(writer, index=False)
+        st.download_button("📄 Modelo ICMS", buffer.getvalue(), "modelo_icms.xlsx", use_container_width=True)
+        st.download_button("📄 Modelo PIS/COFINS", buffer.getvalue(), "modelo_pis_cofins.xlsx", use_container_width=True)
+
+    st.markdown("### ⚙️ Configurações de Base")
+    
+    # Atualizações de Bases Oficiais (O visual delicado que você aprovou)
+    with st.expander("🔄 **Atualizar Base ICMS**"):
+        up_icms = st.file_uploader("Arquivo ICMS", type=['xlsx'], key='base_i', label_visibility="collapsed")
+        if up_icms:
+            with open(".streamlit/Base_ICMS.xlsx", "wb") as f: f.write(up_icms.getbuffer())
+            st.toast("Base ICMS atualizada!", icon="✅")
+
+    with st.expander("🔄 **Atualizar Base PIS/COF**"):
+        up_pis = st.file_uploader("Arquivo PIS", type=['xlsx'], key='base_p', label_visibility="collapsed")
+        if up_pis:
+            with open(".streamlit/Base_CST_Pis_Cofins.xlsx", "wb") as f: f.write(up_pis.getbuffer())
+            st.toast("Base PIS/COF atualizada!", icon="✅")
+
+    with st.expander("🔄 **Atualizar Base TIPI**"):
+        up_tipi = st.file_uploader("Arquivo TIPI", type=['xlsx'], key='base_t', label_visibility="collapsed")
+        if up_tipi:
+            with open(".streamlit/Base_IPI_Tipi.xlsx", "wb") as f: f.write(up_tipi.getbuffer())
+            st.toast("Base TIPI atualizada!", icon="✅")
 
 # --- ÁREA CENTRAL ---
 c1, c2, c3 = st.columns([3, 4, 3])
 with c2:
     if os.path.exists(".streamlit/Sentinela.png"):
         st.image(".streamlit/Sentinela.png", use_container_width=True)
-    else:
-        st.title("🛡️ Sentinela Fiscal")
 
 st.markdown("---")
 
-# --- BLOCO 1: AUTENTICIDADE (CENTRALIZADO) ---
-st.markdown("### 🔍 Passo 1: Base de Autenticidade")
-st.info("Suba aqui o arquivo que contém as Chaves de Acesso e os Status das Notas.")
-base_autenticidade = st.file_uploader("Upload da Planilha de Autenticidade (Excel ou CSV)", type=['xlsx', 'csv'], key="auth_central")
+# Colunas de Entrada e Saída
+col_ent, col_sai = st.columns(2, gap="large")
 
-st.markdown("<br>", unsafe_allow_html=True)
+with col_ent:
+    st.markdown("### 📥 1. Entradas")
+    xml_ent = st.file_uploader("📂 XMLs de Entrada", type='xml', accept_multiple_files=True, key="ue")
+    # BOTÃO DE AUTENTICIDADE DE ENTRADA (Como estava antes)
+    aut_ent = st.file_uploader("🔍 Autenticidade Entrada", type=['xlsx'], key="ae")
 
-# --- BLOCO 2: XMLS ---
-st.markdown("### 📥 Passo 2: Upload de XMLs")
-col_e, col_s = st.columns(2, gap="large")
-
-with col_e:
-    st.markdown("##### Entradas (Compras)")
-    xml_ent = st.file_uploader("Solte os XMLs de Entrada", type='xml', accept_multiple_files=True, key="ue")
-
-with col_s:
-    st.markdown("##### Saídas (Vendas)")
-    xml_sai = st.file_uploader("Solte os XMLs de Saída", type='xml', accept_multiple_files=True, key="us")
+with col_sai:
+    st.markdown("### 📤 2. Saídas")
+    xml_sai = st.file_uploader("📂 XMLs de Saída", type='xml', accept_multiple_files=True, key="us")
+    # BOTÃO DE AUTENTICIDADE DE SAÍDA (Como estava antes)
+    aut_sai = st.file_uploader("🔍 Autenticidade Saída", type=['xlsx'], key="as")
 
 # --- EXECUÇÃO ---
 st.markdown("<br>", unsafe_allow_html=True)
@@ -68,6 +88,25 @@ if st.button("🚀 EXECUTAR AUDITORIA COMPLETA", type="primary", use_container_w
     if not xml_ent and not xml_sai:
         st.error("Por favor, carregue os arquivos XML.")
     else:
-        with st.spinner("O Sentinela está cruzando os dados..."):
-            # Lendo base de autenticidade
-            df_autent_data
+        with st.spinner("O Sentinela está processando e cruzando o Status..."):
+            
+            # Lógica para ler a autenticidade (Prioriza a de Saída para o cruzamento global se ambas existirem)
+            df_autent_data = None
+            arq_aut = aut_sai if aut_sai else aut_ent
+            if arq_aut:
+                df_autent_data = pd.read_excel(arq_aut)
+
+            # Processamento chamando o motor_fiscal.py
+            df_e = extrair_dados_xml(xml_ent, "Entrada", df_autenticidade=df_autent_data)
+            df_s = extrair_dados_xml(xml_sai, "Saída", df_autenticidade=df_autent_data)
+            
+            excel_binario = gerar_excel_final(df_e, df_s)
+            
+            st.success("Análise concluída!")
+            st.download_button(
+                label="💾 BAIXAR RELATÓRIO DE AUDITORIA",
+                data=excel_binario,
+                file_name="Auditoria_Sentinela.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
