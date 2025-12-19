@@ -139,3 +139,41 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
                 else: diag.append("✅ Correto"); acao.append("✅ Correto")
             else: diag.append("✅ Correto"); acao.append("✅ Correto")
         else: diag.append("✅ Correto"); acao.append("✅ Correto")
+        return pd.Series(["; ".join(diag), format_brl(row['VAL-DIFAL']), acao])
+    df_difal[['Diagnóstico', 'DIFAL XML', 'Ação']] = df_difal.apply(audit_difal, axis=1)
+
+    # --- ABA ICMS_DESTINO ---
+    df_dest = df_sai.groupby('UF_DEST').agg({
+        'ICMS-ST': 'sum',
+        'VAL-DIFAL': 'sum',
+        'VAL-FCP': 'sum',
+        'VAL-FCPST': 'sum'
+    }).reset_index()
+    df_dest.columns = ['ESTADO', 'ST', 'DIFAL', 'FCP', 'FCP-ST']
+    for col in ['ST', 'DIFAL', 'FCP', 'FCP-ST']:
+        df_dest[col] = df_dest[col].apply(format_brl)
+
+    # --- ABAS GERENCIAMENTO ---
+    def read_file(f):
+        if not f: return pd.DataFrame([{"AVISO": "Não enviado"}])
+        try:
+            f.seek(0)
+            return pd.read_csv(f, sep=None, engine='python', encoding='utf-8-sig')
+        except:
+            return pd.DataFrame([{"ERRO": "Falha na leitura do CSV"}])
+
+    df_ge = read_file(file_ger_ent)
+    df_gs = read_file(file_ger_sai)
+
+    mem = io.BytesIO()
+    with pd.ExcelWriter(mem, engine='xlsxwriter') as wr:
+        if tem_e: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
+        df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
+        df_icms.to_excel(wr, sheet_name='ICMS', index=False)
+        df_pc.to_excel(wr, sheet_name='PIS_COFINS', index=False)
+        df_ipi.to_excel(wr, sheet_name='IPI', index=False)
+        df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
+        df_dest.to_excel(wr, sheet_name='ICMS_Destino', index=False)
+        df_ge.to_excel(wr, sheet_name='Gerenc. Entradas', index=False)
+        df_gs.to_excel(wr, sheet_name='Gerenc. Saídas', index=False)
+    return mem.getvalue()
