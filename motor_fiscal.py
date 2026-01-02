@@ -1,4 +1,3 @@
-@@ -1,168 +1,208 @@
 import pandas as pd
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -78,7 +77,7 @@ def extrair_dados_xml(files, fluxo, df_autenticidade=None):
 def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     def limpar_txt(v): return str(v).replace('.0', '').strip()
     def format_brl(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
+    
     try:
         base_icms = pd.read_excel(".streamlit/Base_ICMS.xlsx")
         base_icms['NCM_KEY'] = base_icms.iloc[:, 0].apply(limpar_txt).str.replace(r'\D', '', regex=True).str.zfill(8)
@@ -93,8 +92,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     if df_sai is None: df_sai = pd.DataFrame()
     if df_ent is None: df_ent = pd.DataFrame()
 
-    # --- AUDITORIAS XML (EXISTEM APENAS SE HOUVER XML) ---
-    df_icms_audit = df_sai.copy() if not df_sai.empty else pd.DataFrame()
     # --- ABA ICMS ---
     df_icms_audit = df_sai.copy(); tem_e = not df_ent.empty
     ncm_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist() if tem_e else []
@@ -108,17 +105,8 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
         if abs(row['ALQ-ICMS'] - aliq_e) > 0.01: diag.append("Aliq: Divergente"); acao.append("Ajustar Alíquota")
         return pd.Series([st_e, "; ".join(diag) if diag else "✅ Correto", format_brl(row['VPROD']), format_brl(row['BC-ICMS']*aliq_e/100), " + ".join(acao) if acao else "✅ Correto", format_brl(max(0, (aliq_e-row['ALQ-ICMS'])*row['BC-ICMS']/100))])
     if not df_icms_audit.empty:
-        tem_e = not df_ent.empty
-        ncm_st = df_ent[(df_ent['CST-ICMS']=="60") | (df_ent['ICMS-ST'] > 0)]['NCM'].unique().tolist() if tem_e else []
-        def audit_icms(row):
-            ncm = str(row['NCM']).zfill(8); info = base_icms[base_icms['NCM_KEY'] == ncm] if not base_icms.empty else pd.DataFrame()
-            st_e = "✅ ST Localizado" if ncm in ncm_st else "❌ Sem ST na Entrada" if tem_e else "⚠️ Sem Entrada"
-            if info.empty: return pd.Series([st_e, "NCM Ausente", format_brl(row['VPROD']), "R$ 0,00", "Cadastrar NCM", "R$ 0,00"])
-            aliq_e = float(info.iloc[0]['CST_KEY']) if row['UF_EMIT'] == row['UF_DEST'] else 12.0
-            return pd.Series([st_e, "✅", format_brl(row['VPROD']), "R$ 0,00", "✅", "R$ 0,00"])
         df_icms_audit[['ST na Entrada', 'Diagnóstico', 'ICMS XML', 'ICMS Esperado', 'Ação', 'Complemento']] = df_icms_audit.apply(audit_icms, axis=1)
 
-    # ... (Manutenção das demais lógicas de auditoria XML)
     # --- ABA PIS/COFINS ---
     df_pc = df_sai.copy()
     def audit_pc(row):
@@ -133,8 +121,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     if not df_pc.empty:
         df_pc[['Diagnóstico', 'CST XML (P/C)', 'CST Esperado (P/C)', 'Ação']] = df_pc.apply(audit_pc, axis=1)
 
-    # --- LEITURA GERENCIAIS ---
-    def load_gerencial(f, target_cols):
     # --- ABA IPI ---
     df_ipi = df_sai.copy()
     def audit_ipi(row):
@@ -174,14 +160,10 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
     def load_gerencial_flexible(f, target_cols):
         if not f: return pd.DataFrame()
         try:
-            f.seek(0); raw = f.read().decode('utf-8-sig', errors='replace'); sep = ';' if raw.count(';') > raw.count(',') else ','
             f.seek(0)
             raw = f.read().decode('utf-8-sig', errors='replace')
             sep = ';' if raw.count(';') > raw.count(',') else ','
             df = pd.read_csv(io.StringIO(raw), sep=sep, header=None, engine='python', dtype={0: str})
-            if df.shape[0] > 0 and not str(df.iloc[0, 0]).strip().isdigit(): df = df.iloc[1:]
-            num_cols_df = df.shape[1]; num_cols_target = len(target_cols)
-            if num_cols_df > num_cols_target: df = df.iloc[:, :num_cols_target]
             
             if df.shape[0] > 0 and not str(df.iloc[0, 0]).strip().isdigit():
                 df = df.iloc[1:]
@@ -193,9 +175,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
             if num_cols_df > num_cols_target:
                 df = df.iloc[:, :num_cols_target] # Corta colunas extras
             elif num_cols_df < num_cols_target:
-                for i in range(num_cols_target - num_cols_df): df[f'Vazia_{i}'] = ""
-            df.columns = target_cols; return df
-        except: return pd.DataFrame()
                 for i in range(num_cols_target - num_cols_df):
                     df[f'Vazia_{i}'] = "" # Adiciona colunas se faltarem
             
@@ -206,34 +185,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
 
     c_sai = ['NF','DATA_EMISSAO','CNPJ','Ufp','VC','AC','CFOP','COD_ITEM','VUNIT','QTDE','VITEM','DESC','FRETE','SEG','OUTRAS','VC_ITEM','CST','Coluna2','Coluna3','BC_ICMS','ALIQ_ICMS','ICMS','BC_ICMSST','ICMSST','IPI','CST_PIS','BC_PIS','PIS','CST_COF','BC_COF','COF']
     c_ent = ['NUM_NF','DATA_EMISSAO','CNPJ','UF','VLR_NF','AC','CFOP','COD_PROD','DESCR','NCM','UNID','VUNIT','QTDE','VPROD','DESC','FRETE','SEG','DESP','VC','CST-ICMS','Coluna2','BC-ICMS','VLR-ICMS','BC-ICMS-ST','ICMS-ST','VLR_IPI','CST_PIS','BC_PIS','VLR_PIS','CST_COF','BC_COF','VLR_COF']
-    df_ge = load_gerencial(file_ger_ent, c_ent); df_gs = load_gerencial(file_ger_sai, c_sai)
-
-    # --- ABA PIS e COFINS (APURAÇÃO + STATS PARA DASH) ---
-    stats_dash = {'total_deb': 0.0, 'total_cred': 0.0}
-    def process_apuracao_stats(ge, gs):
-        if ge.empty and gs.empty: return pd.DataFrame()
-        for c in ['VC', 'Coluna3', 'ICMS']:
-            if c in gs.columns: gs[c] = pd.to_numeric(gs[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        for c in ['VLR_NF', 'VLR_IPI', 'VLR-ICMS']:
-            if c in ge.columns: ge[c] = pd.to_numeric(ge[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        
-        deb = gs[gs['CST_PIS'].astype(str).str.zfill(2) == '01'].groupby(['AC', 'CFOP']).agg({'VC':'sum', 'Coluna3':'sum', 'ICMS':'sum'}).reset_index()
-        deb.columns = ['AC', 'CFOP', 'Vlr Contabil', 'IPI', 'ICMS']
-        deb['Base'] = deb['Vlr Contabil'] - deb['IPI'] - deb['ICMS']
-        deb['PIS'] = deb['Base'] * 0.0165; deb['COF'] = deb['Base'] * 0.076
-        stats_dash['total_deb'] = deb['PIS'].sum() + deb['COF'].sum()
-        deb.insert(0, 'TIPO', 'DÉBITO (CST 01)')
-
-        cred = ge.groupby(['AC', 'CFOP']).agg({'VLR_NF':'sum', 'VLR_IPI':'sum', 'VLR-ICMS':'sum'}).reset_index()
-        cred.columns = ['AC', 'CFOP', 'Vlr Contabil', 'IPI', 'ICMS']
-        cred['Base'] = cred['Vlr Contabil'] - cred['IPI']
-        cred['PIS'] = cred['Base'] * 0.0165; cred['COF'] = cred['Base'] * 0.076
-        stats_dash['total_cred'] = cred['PIS'].sum() + cred['COF'].sum()
-        cred.insert(0, 'TIPO', 'CRÉDITO')
-
-        return pd.concat([deb, cred], ignore_index=True)
-
-    df_pc_final = process_apuracao_stats(df_ge, df_gs)
     
     df_ge = load_gerencial_flexible(file_ger_ent, c_ent)
     df_gs = load_gerencial_flexible(file_ger_sai, c_sai)
@@ -243,7 +194,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
         if not df_ent.empty: df_ent.to_excel(wr, sheet_name='ENTRADAS', index=False)
         if not df_sai.empty: df_sai.to_excel(wr, sheet_name='SAIDAS', index=False)
         if not df_icms_audit.empty: df_icms_audit.to_excel(wr, sheet_name='ICMS', index=False)
-        if not df_pc_final.empty: df_pc_final.to_excel(wr, sheet_name='PIS e COFINS', index=False)
         if not df_pc.empty: df_pc.to_excel(wr, sheet_name='PIS_COFINS', index=False)
         if not df_ipi.empty: df_ipi.to_excel(wr, sheet_name='IPI', index=False)
         if not df_difal.empty: df_difal.to_excel(wr, sheet_name='DIFAL', index=False)
@@ -251,11 +201,6 @@ def gerar_excel_final(df_ent, df_sai, file_ger_ent=None, file_ger_sai=None):
         if not df_ge.empty: df_ge.to_excel(wr, sheet_name='Gerenc. Entradas', index=False)
         if not df_gs.empty: df_gs.to_excel(wr, sheet_name='Gerenc. Saídas', index=False)
 
-        f_t = wr.book.add_format({'num_format': '@'})
-        for s in wr.sheets:
-            if 'Gerenc' in s: wr.sheets[s].set_column('A:A', 20, f_t)
-
-    return mem.getvalue(), stats_dash
         wb = wr.book; f_txt = wb.add_format({'num_format': '@'})
         for s in ['Gerenc. Entradas', 'Gerenc. Saídas']:
             if s in wr.sheets: wr.sheets[s].set_column('A:A', 20, f_txt)
