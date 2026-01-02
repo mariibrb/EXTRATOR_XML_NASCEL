@@ -5,7 +5,12 @@ import pandas as pd
 from motor_fiscal import extrair_dados_xml, gerar_excel_final
 
 # --- CONFIGURAÇÃO VISUAL ---
-st.set_page_config(page_title="Sentinela", page_icon="🧡", layout="wide")
+st.set_page_config(
+    page_title="Sentinela | Auditoria", 
+    page_icon="🧡", 
+    layout="wide",
+    initial_sidebar_state="expanded" # FORÇA A BARRA LATERAL A APARECER
+)
 
 st.markdown("""
     <style>
@@ -25,10 +30,12 @@ st.markdown("""
 if 'xml_e_key' not in st.session_state: st.session_state.xml_e_key = 0
 if 'xml_s_key' not in st.session_state: st.session_state.xml_s_key = 0
 
-# --- BARRA LATERAL (SIDEBAR RESTAURADA) ---
+# --- BARRA LATERAL (SIDEBAR) ---
 with st.sidebar:
+    st.markdown("### 🧡 Sentinela Nascel")
     if os.path.exists(".streamlit/nascel sem fundo.png"):
         st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
+    
     st.markdown("---")
     with st.expander("📥 **Baixar Gabaritos**", expanded=False):
         df_mod = pd.DataFrame(columns=['CHAVE', 'STATUS'])
@@ -38,13 +45,12 @@ with st.sidebar:
         st.download_button("📄 Modelo PIS/COFINS", buffer.getvalue(), "modelo_pis_cofins.xlsx", use_container_width=True)
 
     st.markdown("### ⚙️ Configurações de Base")
-    with st.expander("🔄 **Atualizar Base ICMS**"):
+    with st.expander("🔄 **Atualizar Bases**"):
         up_icms = st.file_uploader("Arquivo ICMS", type=['xlsx'], key='base_i')
         if up_icms:
             with open(".streamlit/Base_ICMS.xlsx", "wb") as f: f.write(up_icms.getbuffer())
             st.toast("Base ICMS atualizada!", icon="✅")
-    with st.expander("🔄 **Atualizar Base PIS/COF**"):
-        up_pis = st.file_uploader("Arquivo PIS", type=['xlsx'], key='base_p')
+        up_pis = st.file_uploader("Arquivo PIS/COF", type=['xlsx'], key='base_p')
         if up_pis:
             with open(".streamlit/Base_CST_Pis_Cofins.xlsx", "wb") as f: f.write(up_pis.getbuffer())
             st.toast("Base PIS/COF atualizada!", icon="✅")
@@ -61,34 +67,29 @@ col_ent, col_sai = st.columns(2, gap="large")
 with col_ent:
     h1, h2 = st.columns([3, 1])
     h1.markdown("### 📥 1. Entradas")
-    if h2.button("🗑️ Limpar", key="btn_clear_ent"):
+    if h2.button("🗑️ Limpar", key="clr_e"):
         st.session_state.xml_e_key += 1; st.rerun()
-    xml_ent = st.file_uploader("📂 XMLs Entradas", type='xml', accept_multiple_files=True, key=f"xml_e_{st.session_state.xml_e_key}")
-    aut_ent = st.file_uploader("🔍 Autenticidade Entrada", type=['xlsx'], key="ae")
+    xml_ent = st.file_uploader("📂 XMLs Entradas", type='xml', accept_multiple_files=True, key=f"e_{st.session_state.xml_e_key}")
     ger_ent = st.file_uploader("📊 Gerencial Entradas (CSV)", type=['csv'], key="ge")
 
 with col_sai:
     h3, h4 = st.columns([3, 1])
     h3.markdown("### 📤 2. Saídas")
-    if h4.button("🗑️ Limpar", key="btn_clear_sai"):
+    if h4.button("🗑️ Limpar", key="clr_s"):
         st.session_state.xml_s_key += 1; st.rerun()
-    xml_sai = st.file_uploader("📂 XMLs Saídas", type='xml', accept_multiple_files=True, key=f"xml_s_{st.session_state.xml_s_key}")
-    aut_sai = st.file_uploader("🔍 Autenticidade Saída", type=['xlsx'], key="as")
+    xml_sai = st.file_uploader("📂 XMLs Saídas", type='xml', accept_multiple_files=True, key=f"s_{st.session_state.xml_s_key}")
     ger_sai = st.file_uploader("📊 Gerencial Saídas (CSV)", type=['csv'], key="gs")
 
 # --- EXECUÇÃO ---
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("🚀 EXECUTAR SENTINELA", type="primary", use_container_width=True):
-    if not (xml_ent or xml_sai or ger_ent or ger_sai):
-        st.error("Por favor, carregue os arquivos.")
-    else:
-        try:
-            with st.spinner("O Sentinela está processando... 🧡"):
-                df_e = extrair_dados_xml(xml_ent, "Entrada")
-                df_s = extrair_dados_xml(xml_sai, "Saída")
-                excel_bin = gerar_excel_final(df_e, df_s, file_ger_ent=ger_ent, file_ger_sai=ger_sai)
-                if excel_bin:
-                    st.success("Análise concluída! 🧡")
-                    st.download_button(label="💾 BAIXAR RELATÓRIO", data=excel_bin, file_name="Auditoria_Sentinela.xlsx", use_container_width=True)
-        except Exception as e:
-            st.error(f"Erro crítico: {e}")
+    try:
+        with st.spinner("🧡 Processando..."):
+            df_e = extrair_dados_xml(xml_ent, "Entrada")
+            df_s = extrair_dados_xml(xml_sai, "Saída")
+            excel_bin = gerar_excel_final(df_e, df_s, file_ger_ent=ger_ent, file_ger_sai=ger_sai)
+            if excel_bin:
+                st.success("Análise concluída!")
+                st.download_button(label="💾 BAIXAR RELATÓRIO", data=excel_bin, file_name="Sentinela_Audit.xlsx", use_container_width=True)
+    except Exception as e:
+        st.error(f"Erro: {e}")
