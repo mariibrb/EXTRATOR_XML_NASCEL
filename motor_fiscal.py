@@ -26,8 +26,7 @@ def extrair_dados_xml(files):
                     "NCM": re.sub(r'\D', '', buscar('NCM', prod)).zfill(8),
                     "COD_PROD": buscar('cProd', prod), "DESCR": buscar('xProd', prod),
                     "VPROD": float(buscar('vProd', prod) or 0),
-                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0,
-                    "CST-PIS": "", "VAL-PIS": 0.0, "CST-COF": "", "VAL-COF": 0.0
+                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0
                 }
                 if imp is not None:
                     ic = imp.find('.//ICMS')
@@ -36,7 +35,6 @@ def extrair_dados_xml(files):
                             cst = n.find('CST') or n.find('CSOSN')
                             if cst is not None: linha["CST-ICMS"] = cst.text.zfill(2)
                             if n.find('vBC') is not None: linha["BC-ICMS"] = float(n.find('vBC').text)
-                            if n.find('vICMS') is not None: linha["VLR-ICMS"] = float(n.find('vICMS').text)
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
@@ -58,6 +56,6 @@ def gerar_excel_final(df_xe, df_xs, ge=None, gs=None, ae=None, as_f=None):
     with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
         if not df_xe.empty: df_xe.to_excel(wr, sheet_name='XML_ENTRADAS', index=False)
         if not df_xs.empty: df_xs.to_excel(wr, sheet_name='XML_SAIDAS', index=False)
-        if not df_ge.empty: df_ge.to_excel(wr, sheet_name='GERENCIAL_ENT', index=False)
-        if not df_gs.empty: df_gs.to_excel(wr, sheet_name='GERENCIAL_SAI', index=False)
+        if not df_ge.empty: df_ge.to_excel(wr, sheet_name='GER_ENT', index=False)
+        if not df_gs.empty: df_gs.to_excel(wr, sheet_name='GER_SAI', index=False)
     return out.getvalue()
