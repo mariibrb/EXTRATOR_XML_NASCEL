@@ -10,30 +10,105 @@ def extrair_dados_xml(files):
     for f in files:
         try:
             f.seek(0)
-            root = ET.fromstring(re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', f.read().decode('utf-8', errors='replace')))
+            conteudo = f.read().decode('utf-8', errors='replace')
+            root = ET.fromstring(re.sub(r'\sxmlns(:\w+)?="[^"]+"', '', conteudo))
+            
             def buscar(caminho, raiz=root):
                 alvo = raiz.find(f'.//{caminho}')
                 return alvo.text if alvo is not None and alvo.text is not None else ""
+
             inf_nfe = root.find('.//infNFe')
             chave = inf_nfe.attrib.get('Id', '')[3:] if inf_nfe is not None else ""
+            
             for det in root.findall('.//det'):
-                prod = det.find('prod'); imp = det.find('imposto')
+                prod = det.find('prod')
+                imp = det.find('imposto')
+                ncm_limpo = re.sub(r'\D', '', buscar('NCM', prod)).zfill(8)
+                
                 linha = {
-                    "CHAVE_ACESSO": chave, "NUM_NF": buscar('nNF'),
+                    "CHAVE_ACESSO": chave,
+                    "NUM_NF": buscar('nNF'),
                     "DATA_EMISSAO": buscar('dhEmi')[:10] if buscar('dhEmi') else "",
-                    "UF_EMIT": buscar('UF', root.find('.//emit')), "UF_DEST": buscar('UF', root.find('.//dest')),
-                    "AC": int(det.attrib.get('nItem', '0')), "CFOP": buscar('CFOP', prod),
-                    "NCM": re.sub(r'\D', '', buscar('NCM', prod)).zfill(8),
-                    "COD_PROD": buscar('cProd', prod), "DESCR": buscar('xProd', prod),
-                    "VPROD": float(buscar('vProd', prod) or 0)
+                    "UF_EMIT": buscar('UF', root.find('.//emit')),
+                    "UF_DEST": buscar('UF', root.find('.//dest')),
+                    "AC": int(det.attrib.get('nItem', '0')),
+                    "CFOP": buscar('CFOP', prod),
+                    "NCM": ncm_limpo,
+                    "COD_PROD": buscar('cProd', prod),
+                    "DESCR": buscar('xProd', prod),
+                    "VPROD": float(buscar('vProd', prod) or 0),
+                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0, "ALQ-ICMS": 0.0,
+                    "CST-PIS": "", "VAL-PIS": 0.0, "CST-COF": "", "VAL-COF": 0.0,
+                    "CST-IPI": "", "VAL-IPI": 0.0, "VAL-DIFAL": 0.0
                 }
+
+                if imp is not None:
+                    # Lógica Fiscal: ICMS
+                    icms = imp.find('.//ICMS')
+                    if icms is not None:
+                        for n in icms:
+                            cst = n.find('CST') or n.find('CSOSN')
+                            if cst is not None: linha["CST-ICMS"] = cst.text.zfill(2)
+                            if n.find('vBC') is not None: linha["BC-ICMS"] = float(n.find('vBC').text)
+                            if n.find('vICMS') is not None: linha["VLR-ICMS"] = float(n.find('vICMS').text)
+                            if n.find('pICMS') is not None: linha["ALQ-ICMS"] = float(n.find('pICMS').text)
+                    
+                    # Lógica Fiscal: PIS/COFINS
+                    pis = imp.find('.//PIS')
+                    if pis is not None:
+                        for p in pis:
+                            if p.find('CST') is not None: linha["CST-PIS"] = p.find('CST').text.zfill(2)
+                            if p.find('vPIS') is not None: linha["VAL-PIS"] = float(p.find('vPIS').text)
+                    
+                    cof = imp.find('.//COFINS')
+                    if cof is not None:
+                        for c in cof:
+                            if c.find('CST') is not None: linha["CST-COF"] = c.find('CST').text.zfill(2)
+                            if c.find('vCOFINS') is not None: linha["VAL-COF"] = float(c.find('vCOFINS').text)
+                    
+                    # Lógica Fiscal: DIFAL
+                    difal = imp.find('.//ICMSUFDest')
+                    if difal is not None and difal.find('vICMSUFDest') is not None:
+                        linha["VAL-DIFAL"] = float(difal.find('vICMSUFDest').text)
+
                 dados_lista.append(linha)
         except: continue
     return pd.DataFrame(dados_lista)
 
-def gerar_excel_final(df_xe, df_xs, ge=None, gs=None):
+def gerar_excel_final(df_xe, df_xs, ge=None, gs=None, ae=None, as_f=None):
+    # Funções de limpeza e carga
+    def load_csv(f, cols):
+        if not f: return pd.DataFrame()
+        try:
+            f.seek(0); raw = f.read().decode('utf-8-sig'); sep = ';' if raw.count(';') > raw.count(',') else ','
+            df = pd.read_csv(io.StringIO(raw), sep=sep, header=None, engine='python', dtype={0: str})
+            if not str(df.iloc[0,0]).isdigit(): df = df.iloc[1:]
+            df = df.iloc[:, :len(cols)]; df.columns = cols
+            return df
+        except: return pd.DataFrame()
+
+    # Colunas padrão do seu Gerencial
+    cols_e = ['NUM_NF','DATA_EMISSAO','CNPJ','UF','VLR_NF','AC','CFOP','COD_PROD','DESCR','NCM','UNID','VUNIT','QTDE','VPROD','DESC','FRETE','SEG','DESP','VC','CST-ICMS','Coluna2','BC-ICMS','VLR-ICMS','BC-ICMS-ST','ICMS-ST','VLR_IPI','CST_PIS','BC_PIS','VLR_PIS','CST_COF','BC_COF','VLR_COF']
+    cols_s = ['NF','DATA_EMISSAO','CNPJ','Ufp','VC','AC','CFOP','COD_ITEM','VUNIT','QTDE','VITEM','DESC','FRETE','SEG','OUTRAS','VC_ITEM','CST','Coluna2','Coluna3','BC_ICMS','ALIQ_ICMS','ICMS','BC_ICMSST','ICMSST','IPI','CST_PIS','BC_PIS','PIS','CST_COF','BC_COF','COF']
+    
+    df_ge = load_csv(ge, cols_e)
+    df_gs = load_csv(gs, cols_s)
+    df_ae = pd.read_excel(ae) if ae else pd.DataFrame()
+    df_as = pd.read_excel(as_f) if as_f else pd.DataFrame()
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as wr:
         if not df_xe.empty: df_xe.to_excel(wr, sheet_name='XML_ENTRADAS', index=False)
         if not df_xs.empty: df_xs.to_excel(wr, sheet_name='XML_SAIDAS', index=False)
+        if not df_ge.empty: df_ge.to_excel(wr, sheet_name='GERENCIAL_ENT', index=False)
+        if not df_gs.empty: df_gs.to_excel(wr, sheet_name='GERENCIAL_SAI', index=False)
+        if not df_ae.empty: df_ae.to_excel(wr, sheet_name='AUTENTICIDADE_ENT', index=False)
+        if not df_as.empty: df_as.to_excel(wr, sheet_name='AUTENTICIDADE_SAI', index=False)
+        
+        # Formatação
+        workbook = wr.book
+        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#FF6F00', 'color': 'white'})
+        for sheet in wr.sheets.values():
+            sheet.set_column('A:AZ', 18)
+            
     return output.getvalue()
