@@ -31,7 +31,6 @@ def extrair_dados_xml(files):
                     "CST-IPI": "", "VAL-IPI": 0.0
                 }
                 if imp is not None:
-                    # ICMS
                     ic = imp.find('.//ICMS')
                     if ic is not None:
                         for n in ic:
@@ -39,7 +38,6 @@ def extrair_dados_xml(files):
                             if cst is not None: linha["CST-ICMS"] = cst.text.zfill(2)
                             if n.find('vBC') is not None: linha["BC-ICMS"] = float(n.find('vBC').text)
                             if n.find('vICMS') is not None: linha["VLR-ICMS"] = float(n.find('vICMS').text)
-                    # PIS/COFINS
                     p = imp.find('.//PIS'); c = imp.find('.//COFINS')
                     if p is not None:
                         for item in p:
@@ -59,7 +57,7 @@ def gerar_excel_final(df_xml_e, df_xml_s, f_ge=None, f_gs=None, f_ae=None, f_as=
         try:
             f.seek(0); raw = f.read().decode('utf-8-sig'); sep = ';' if raw.count(';') > raw.count(',') else ','
             df = pd.read_csv(io.StringIO(raw), sep=sep, header=None, engine='python', dtype={0: str})
-            if not str(df.iloc[0,0]).isdigit(): df = df.iloc[1:]
+            if df.shape[0] > 0 and not str(df.iloc[0, 0]).isdigit(): df = df.iloc[1:]
             df = df.iloc[:, :len(cols)]; df.columns = cols
             return df
         except: return pd.DataFrame()
