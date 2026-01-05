@@ -40,13 +40,11 @@ def extrair_dados_xml(files):
                     "COD_PROD": buscar('cProd', prod),
                     "DESCR": buscar('xProd', prod),
                     "VPROD": float(buscar('vProd', prod) or 0),
-                    "CST-ICMS": "", "BC-ICMS": 0.0, "ALQ-ICMS": 0.0, "VLR-ICMS": 0.0,
-                    "CST-PIS": "", "BC-PIS": 0.0, "ALQ-PIS": 0.0, "VLR-PIS": 0.0,
-                    "CST-COFINS": "", "BC-COFINS": 0.0, "ALQ-COFINS": 0.0, "VLR-COFINS": 0.0
+                    "CST-ICMS": "", "BC-ICMS": 0.0, "VLR-ICMS": 0.0, "ALQ-ICMS": 0.0,
+                    "CST-PIS": "", "VLR-PIS": 0.0, "CST-COFINS": "", "VLR-COFINS": 0.0
                 }
 
                 if imp is not None:
-                    # ICMS
                     icms = imp.find('.//ICMS')
                     if icms is not None:
                         for n in icms:
@@ -56,22 +54,14 @@ def extrair_dados_xml(files):
                             if n.find('vICMS') is not None: linha["VLR-ICMS"] = float(n.find('vICMS').text)
                             if n.find('pICMS') is not None: linha["ALQ-ICMS"] = float(n.find('pICMS').text)
                     
-                    # PIS
                     pis = imp.find('.//PIS')
                     if pis is not None:
                         for p in pis:
-                            if p.find('CST') is not None: linha["CST-PIS"] = p.find('CST').text.zfill(2)
-                            if p.find('vBC') is not None: linha["BC-PIS"] = float(p.find('vBC').text)
-                            if p.find('pPIS') is not None: linha["ALQ-PIS"] = float(p.find('pPIS').text)
                             if p.find('vPIS') is not None: linha["VLR-PIS"] = float(p.find('vPIS').text)
-                            
-                    # COFINS
+                    
                     cof = imp.find('.//COFINS')
                     if cof is not None:
                         for c in cof:
-                            if c.find('CST') is not None: linha["CST-COFINS"] = c.find('CST').text.zfill(2)
-                            if c.find('vBC') is not None: linha["BC-COFINS"] = float(c.find('vBC').text)
-                            if c.find('pCOFINS') is not None: linha["ALQ-COFINS"] = float(c.find('pCOFINS').text)
                             if c.find('vCOFINS') is not None: linha["VLR-COFINS"] = float(c.find('vCOFINS').text)
 
                 dados_lista.append(linha)
@@ -97,16 +87,13 @@ def gerar_excel_final(df_xe, df_xs, ge_file=None, gs_file=None, ae_file=None, as
         if not df_xe.empty: df_xe.to_excel(writer, sheet_name='XML_ENTRADAS', index=False)
         if not df_xs.empty: df_xs.to_excel(writer, sheet_name='XML_SAIDAS', index=False)
         
-        df_ge = load_csv(ge_file, c_e)
         df_gs = load_csv(gs_file, c_s)
-        if not df_ge.empty: df_ge.to_excel(writer, sheet_name='GERENCIAL_ENT', index=False)
-        if not df_gs.empty: df_gs.to_excel(writer, sheet_name='GERENCIAL_SAI', index=False)
+        if not df_gs.empty: df_gs.to_excel(writer, sheet_name='GERENCIAL_SAIDAS', index=False)
         
-        # ABA DE ANÁLISE RESTAURADA
         if not df_xs.empty and not df_gs.empty:
             df_comp = pd.merge(df_xs[['NUM_NF', 'VPROD', 'VLR-ICMS']], 
                              df_gs[['NF', 'VITEM', 'V_ICMS']], 
                              left_on='NUM_NF', right_on='NF', how='left')
-            df_comp.to_excel(writer, sheet_name='CONFERENCIA_VALORES', index=False)
+            df_comp.to_excel(writer, sheet_name='ANALISE_CONFERENCIA', index=False)
             
     return output.getvalue()
