@@ -94,19 +94,16 @@ def gerar_excel_final(df_xe, df_xs, ge_file=None, gs_file=None, ae_file=None, as
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # 1. XMLs Brutos
         if not df_xe.empty: df_xe.to_excel(writer, sheet_name='XML_ENTRADAS', index=False)
         if not df_xs.empty: df_xs.to_excel(writer, sheet_name='XML_SAIDAS', index=False)
         
-        # 2. Gerenciais
         df_ge = load_csv(ge_file, c_e)
         df_gs = load_csv(gs_file, c_s)
         if not df_ge.empty: df_ge.to_excel(writer, sheet_name='GERENCIAL_ENT', index=False)
         if not df_gs.empty: df_gs.to_excel(writer, sheet_name='GERENCIAL_SAI', index=False)
         
-        # 3. ABA DE ANÁLISE (Onde as conferências acontecem)
+        # ABA DE ANÁLISE RESTAURADA
         if not df_xs.empty and not df_gs.empty:
-            # Exemplo de Análise: Cruzamento XML vs Gerencial
             df_comp = pd.merge(df_xs[['NUM_NF', 'VPROD', 'VLR-ICMS']], 
                              df_gs[['NF', 'VITEM', 'V_ICMS']], 
                              left_on='NUM_NF', right_on='NF', how='left')
