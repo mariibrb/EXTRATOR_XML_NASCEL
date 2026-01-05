@@ -4,37 +4,47 @@ from motor_fiscal import extrair_dados_xml, gerar_excel_final
 
 st.set_page_config(page_title="Sentinela Nascel", page_icon="🧡", layout="wide", initial_sidebar_state="expanded")
 
-# Estilização
 st.markdown("""
     <style>
     .stApp { background-color: #F7F7F7; }
-    h1, h2, h3 { color: #FF6F00 !important; }
+    h1, h2, h3 { color: #FF6F00 !important; font-weight: 700; }
     .stButton>button { background-color: #FF6F00; color: white; border-radius: 20px; font-weight: bold; }
     .stFileUploader { border: 1px dashed #FF6F00; border-radius: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (UPLOAD/DOWNLOAD DE BASES) ---
+# Função auxiliar para não dar erro no download vazio
+def get_empty_excel():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as wr:
+        pd.DataFrame().to_excel(wr, sheet_name='Planilha1')
+    return output.getvalue()
+
+empty_data = get_empty_excel()
+
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image(".streamlit/nascel sem fundo.png", use_container_width=True) if os.path.exists(".streamlit/nascel sem fundo.png") else st.title("Menu Sentinela")
-    st.markdown("---")
+    if os.path.exists(".streamlit/nascel sem fundo.png"):
+        st.image(".streamlit/nascel sem fundo.png", use_container_width=True)
+    else:
+        st.title("🧡 Sentinela")
     
+    st.markdown("---")
     st.subheader("⚙️ Configurações de Base")
     with st.expander("🔄 Upload de Bases", expanded=False):
-        up_icms = st.file_uploader("Base ICMS (xlsx)", type='xlsx')
-        up_piscof = st.file_uploader("Base PIS/COFINS (xlsx)", type='xlsx')
+        st.file_uploader("Base ICMS (xlsx)", type='xlsx', key='u_icms')
+        st.file_uploader("Base PIS/COFINS (xlsx)", type='xlsx', key='u_pc')
         if st.button("Salvar Bases"):
-            st.success("Bases atualizadas!")
+            st.toast("Bases atualizadas!", icon="✅")
 
     with st.expander("📥 Download de Modelos", expanded=False):
-        st.download_button("Gabarito PIS/COF/IPI", io.BytesIO().getvalue(), "modelo_piscof_ipi.xlsx")
-        st.download_button("Gabarito ICMS", io.BytesIO().getvalue(), "modelo_icms.xlsx")
+        st.download_button("📄 Gabarito PIS/COF/IPI", empty_data, "modelo_piscof_ipi.xlsx", use_container_width=True)
+        st.download_button("📄 Gabarito ICMS", empty_data, "modelo_icms.xlsx", use_container_width=True)
 
 # --- TELA PRINCIPAL ---
 st.header("🚀 Sentinela: Auditoria Fiscal")
 st.markdown("---")
 
-# Seção de Entradas e Saídas
 col_ent, col_sai = st.columns(2, gap="large")
 
 with col_ent:
@@ -52,12 +62,14 @@ with col_sai:
 st.markdown("---")
 if st.button("🚀 EXECUTAR AUDITORIA", type="primary", use_container_width=True):
     if not (xml_e or xml_s):
-        st.warning("Carregue ao menos os XMLs para começar.")
+        st.warning("Carregue os XMLs para começar.")
     else:
-        with st.spinner("Processando Auditoria..."):
-            df_xe = extrair_dados_xml(xml_e)
-            df_xs = extrair_dados_xml(xml_s)
-            relatorio = gerar_excel_final(df_xe, df_xs, ger_e, ger_s, aut_e, aut_s)
-            
-            st.success("Auditoria concluída com sucesso!")
-            st.download_button("💾 BAIXAR RELATÓRIO COMPLETO", relatorio, "Relatorio_Sentinela.xlsx", use_container_width=True)
+        with st.spinner("🧡 Processando Auditoria..."):
+            try:
+                df_xe = extrair_dados_xml(xml_e)
+                df_xs = extrair_dados_xml(xml_s)
+                relatorio = gerar_excel_final(df_xe, df_xs, ger_e, ger_s, aut_e, aut_s)
+                st.success("Auditoria concluída!")
+                st.download_button("💾 BAIXAR RELATÓRIO", relatorio, "Relatorio_Sentinela.xlsx", use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao gerar: {e}")
