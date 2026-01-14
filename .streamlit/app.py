@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (PRESERVADO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -90,69 +90,34 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN LÚDICO PREMIUM (SIDEBAR CLARO E LEITURA FÁCIL) ---
-st.set_page_config(page_title="Garimpeiro", layout="wide", page_icon="⛏️")
+# --- DESIGN PREMIUM REFINADO ---
+st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Fundo Champagne */
     .stApp { background-color: #f7f3f0; }
-    
-    /* Sidebar Marrom Claro (Efeito Madeira/Latte) */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #EADBC8 0%, #D2B48C 100%) !important;
         border-right: 3px solid #b8860b;
     }
-    
-    /* Texto do Sidebar: Marrom Café Escuro para Contraste */
-    [data-testid="stSidebar"] * { 
-        color: #2b1e16 !important; 
-        font-weight: 800 !important; 
-    }
-
-    /* Botões do Sidebar (Dourado com Texto Escuro Legível) */
+    [data-testid="stSidebar"] * { color: #2b1e16 !important; font-weight: 800 !important; }
     [data-testid="stSidebar"] div.stButton > button {
         background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 100%) !important;
-        color: #2b1e16 !important; /* TEXTO ESCURO NO BOTÃO DOURADO */
-        border: 2px solid #8a6d3b !important;
-        font-weight: 900 !important;
-        text-transform: uppercase;
+        color: #2b1e16 !important; border: 2px solid #8a6d3b !important; font-weight: 900 !important;
     }
-
-    /* Títulos Gerais */
-    h1, h2, h3, h4, p, label, .stMetric label { 
-        color: #2b1e16 !important; 
-        font-family: 'Playfair Display', serif;
-        font-weight: 800 !important;
-    }
-    
+    h1, h2, h3, h4, p, label, .stMetric label { color: #2b1e16 !important; font-family: 'Playfair Display', serif; font-weight: 800 !important; }
     h1 { font-size: 3.5rem !important; text-shadow: 2px 2px 0px #fff; }
-
-    /* Cards de Métricas */
     [data-testid="stMetric"] {
         background: linear-gradient(135deg, #ffffff 0%, #fff9e6 100%);
-        border: 2px solid #d4af37;
-        border-radius: 20px;
-        padding: 25px;
-        box-shadow: 8px 8px 20px rgba(0,0,0,0.12);
+        border: 2px solid #d4af37; border-radius: 20px; padding: 25px; box-shadow: 8px 8px 20px rgba(0,0,0,0.12);
     }
     [data-testid="stMetricValue"] { color: #a67c00 !important; font-weight: 900 !important; font-size: 2.5rem !important; }
-
-    /* Botão Principal Grande */
     div.stButton > button:first-child {
         background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%);
-        color: #2b1e16 !important;
-        border: 2px solid #8a6d3b;
-        padding: 20px 40px;
-        font-size: 22px;
-        font-weight: 900 !important;
-        border-radius: 50px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-        width: 100%;
-        text-transform: uppercase;
+        color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 20px 40px;
+        font-size: 22px; font-weight: 900 !important; border-radius: 50px; box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        width: 100%; text-transform: uppercase;
     }
-
-    /* Chuva de Ouro */
     .gold-item { position: fixed; top: -50px; z-index: 9999; pointer-events: none; animation: drop 3.5s linear forwards; }
     @keyframes drop { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
     </style>
@@ -222,23 +187,32 @@ else:
 
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
-                # CHUVA DE OURO
                 icons = ["💰", "🪙", "💎", "🥇", "✨"]
                 rain_html = "".join([f'<div class="gold-item" style="left:{random.randint(0,95)}%; animation-delay:{random.uniform(0,2.5)}s; font-size:{random.randint(25,45)}px;">{random.choice(icons)}</div>' for i in range(70)])
                 st.markdown(rain_html, unsafe_allow_html=True)
 
-# --- RESULTADOS ---
+# --- RESULTADOS E BUSCA ---
 if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
+    
     col1, col2, col3 = st.columns(3)
     col1.metric("📦 VOLUME MINERADO", f"{len(df_res)}")
     emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
     col2.metric("✨ NOTAS DO CLIENTE", f"{emitidas}")
-    
     df_f = st.session_state.get('df_faltantes')
-    buracos_qtd = len(df_f) if df_f is not None and not df_f.empty else 0
-    col3.metric("⚠️ BURACOS NA MINA", f"{buracos_qtd}")
+    col3.metric("⚠️ BURACOS NA MINA", f"{len(df_f) if df_f is not None else 0}")
+
+    st.markdown("### 🔍 Peneira de Notas (Busca Individual)")
+    busca = st.text_input("Digite o Número da Nota ou a Chave para baixar:", placeholder="Ex: 1234")
+    
+    if busca:
+        filtro = df_res[df_res['Número'].astype(str).str.contains(busca) | df_res['Chave'].str.contains(busca)]
+        if not filtro.empty:
+            for _, row in filtro.iterrows():
+                st.download_button(f"📥 Baixar XML: {row['Tipo']} - Nº {row['Número']}", row['Conteúdo'], file_name=row['Arquivo'])
+        else:
+            st.warning("Nenhuma pepita encontrada com esse número.")
 
     st.markdown("---")
     st.markdown("### ⚠️ RELATÓRIO DE NOTAS FALTANTES")
@@ -248,4 +222,4 @@ if st.session_state.get('garimpo_ok'):
         st.success("Mina íntegra! Sequência completa.")
 
     st.divider()
-    st.download_button("📥 BAIXAR TESOURO (.ZIP)", st.session_state['zip_completo'], "garimpo_final.zip", use_container_width=True)
+    st.download_button("📥 BAIXAR TESOURO COMPLETO (.ZIP)", st.session_state['zip_completo'], "garimpo_final.zip", use_container_width=True)
