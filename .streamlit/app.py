@@ -5,9 +5,9 @@ import os
 import xml.etree.ElementTree as ET
 import re
 import pandas as pd
-import gc
+import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
+# --- MOTOR DE IDENTIFICAÇÃO (PRESERVADO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -74,9 +74,9 @@ def process_zip_recursively(file_bytes, zf_output, processed_keys, sequencias, r
                         processed_keys.add(ident)
                         zf_output.writestr(f"{resumo['Pasta']}/{info.filename}", content)
                         relatorio_lista.append(resumo)
-                        if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
-                            doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
-                            s_key = (doc_base, resumo["Série"])
+                        # REGISTRA SEQUÊNCIA APENAS PARA EMITIDOS REAIS (NÃO INUTILIZADOS/EVENTOS)
+                        if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"] and "Inutilizacoes" not in resumo["Tipo"]:
+                            s_key = (resumo["Tipo"], resumo["Série"])
                             if s_key not in sequencias: sequencias[s_key] = set()
                             sequencias[s_key].add(resumo["Número"])
     except: pass
@@ -90,33 +90,49 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN PREMIUM CONFORME A IMAGEM ---
+# --- DESIGN PREMIUM REFINADO ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Degradê Champagne/Bronze no fundo e sidebar */
-    .stApp, [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%);
+    /* Degradê Champagne Suave */
+    .stApp {
+        background: linear-gradient(180deg, #FFFFFF 0%, #E2D1C3 100%);
     }
     
-    [data-testid="stSidebar"] * { color: #5D4037 !important; }
-
-    h1 { color: #5D4037 !important; font-family: 'Playfair Display', serif; font-weight: 800; text-align: center; }
-
-    /* Botões Dourados */
-    div.stButton > button:first-child {
-        background: linear-gradient(180deg, #E6BE8A 0%, #B8860B 100%);
-        color: #3D2B1F !important; border: 1px solid #8B4513;
-        padding: 10px 30px; font-size: 18px; font-weight: bold; border-radius: 25px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    /* Sidebar Integrada */
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+        background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%) !important;
     }
     
-    /* Efeito Chuva de Ouro */
+    /* Textos em Marrom Café Profundo (Onyx) */
+    h1, h2, h3, p, label, .stMetric label, [data-testid="stMetricValue"] {
+        color: #3D2B1F !important;
+        font-family: 'Playfair Display', serif;
+    }
+
+    /* Botões Dourados com Design Limpo */
+    div.stButton > button {
+        background: linear-gradient(180deg, #F9D976 0%, #D4AF37 100%);
+        color: #3D2B1F !important;
+        border: 1px solid #B8860B;
+        padding: 12px 30px;
+        font-size: 18px;
+        font-weight: bold;
+        border-radius: 30px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        width: 100%;
+        transition: 0.3s;
+    }
+    div.stButton > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 15px rgba(184, 134, 11, 0.3);
+    }
+
+    /* Chuva de Ouro Aleatória e Espaçada */
     .gold-item {
         position: fixed; top: -50px; z-index: 9999;
         pointer-events: none; animation: drop 3s linear forwards;
-        font-size: 32px;
     }
     @keyframes drop {
         0% { transform: translateY(0) rotate(0deg); opacity: 1; }
@@ -125,20 +141,20 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 if 'cnpj_confirmado' not in st.session_state: st.session_state['cnpj_confirmado'] = False
 
-# --- SIDEBAR DOURADINHA ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("### 🏺 Identificação")
+    st.markdown("### ⭐ Identificação")
     raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
     
     if len(cnpj_limpo) == 14:
-        st.markdown(f"**Formatado:** `{format_cnpj(raw_cnpj)}`")
-        if st.button("✅ CONFIRMAR CNPJ"):
+        st.markdown(f"**Identificado:** `{format_cnpj(raw_cnpj)}`")
+        if st.button("✅ CONFIRMAR CLIENTE"):
             st.session_state['cnpj_confirmado'] = True
             st.rerun()
     
@@ -149,10 +165,10 @@ with st.sidebar:
 
 # --- ÁREA DE TRABALHO ---
 if not st.session_state['cnpj_confirmado']:
-    st.info("👋 Digite o CNPJ completo no menu lateral e clique em **Confirmar CNPJ** para começar.")
+    st.info("👋 Digite o CNPJ completo no menu lateral e confirme para começar.")
 else:
     st.markdown(f"### 📥 Depósito de Arquivos: {format_cnpj(raw_cnpj)}")
-    uploaded_files = st.file_uploader("Arraste aqui seus arquivos XML ou ZIP:", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Arraste seus arquivos XML ou ZIP:", accept_multiple_files=True)
 
     if uploaded_files:
         if st.button("🚀 INICIAR GARIMPO"):
@@ -160,7 +176,6 @@ else:
             zip_buffer = io.BytesIO()
             
             with st.status("💎 Minerando...", expanded=True) as status:
-                total = len(uploaded_files)
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
                     for i, file in enumerate(uploaded_files):
                         f_bytes = file.read()
@@ -173,33 +188,58 @@ else:
                                 processed_keys.add(ident)
                                 zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
                                 relatorio_lista.append(resumo)
-                                if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
-                                    doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
-                                    s_key = (doc_base, resumo["Série"])
+                                # LÓGICA DE SEQUENCIAL
+                                if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
+                                    s_key = (resumo["Tipo"], resumo["Série"])
                                     if s_key not in sequencias: sequencias[s_key] = set()
                                     sequencias[s_key].add(resumo["Número"])
                 
-                faltantes_lista = []
-                for (t, s), nums in sequencias.items():
-                    if nums:
-                        ideal = set(range(min(nums), max(nums) + 1))
-                        for b in sorted(list(ideal - nums)):
-                            faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
-                st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
+                # CÁLCULO DE BURACOS
+                faltantes_data = []
+                for (tipo, serie), numeros in sequencias.items():
+                    if numeros:
+                        ideal = set(range(min(numeros), max(nums := max(numeros)) + 1))
+                        buracos = sorted(list(ideal - numeros))
+                        for b in buracos:
+                            faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
+                
+                st.session_state['df_faltantes'] = pd.DataFrame(faltantes_data) if faltantes_data else pd.DataFrame()
                 status.update(label="✅ Garimpo finalizado!", state="complete")
 
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
-                # CHUVA DE OURO
+                # CHUVA DE OURO ESPAÇADA
                 icons = ["💰", "🪙", "💎", "🥇", "✨"]
-                rain_html = "".join([f'<div class="gold-item" style="left:{i*2}%; animation-delay:{i*0.1}s;">{icons[i%len(icons)]}</div>' for i in range(50)])
+                rain_html = ""
+                for i in range(70):
+                    left, delay, icon = random.randint(0, 98), random.uniform(0, 2), random.choice(icons)
+                    rain_html += f'<div class="gold-item" style="left:{left}%; top:-50px; animation-delay:{delay}s; animation-duration:{random.uniform(2,4)}s;">{icon}</div>'
                 st.markdown(rain_html, unsafe_allow_html=True)
 
+# --- RESULTADOS ---
 if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
+    
     c1, c2, c3 = st.columns(3)
-    c1.metric("📦 Total Extraído", f"{len(df_res)}")
-    c2.metric("💎 Notas do Cliente", f"{len(df_res[df_res['Pasta'].str.contains('EMITIDOS')])}")
-    c3.metric("⚠️ Buracos", f"{len(st.session_state['df_faltantes']) if st.session_state['df_faltantes'] is not None else 0}")
+    c1.metric("📦 Total Extraído", f"{len(df_res)} itens")
+    emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
+    c2.metric("💎 Notas do Cliente", f"{emitidas}")
+    
+    df_f = st.session_state.get('df_faltantes')
+    buracos_qtd = len(df_f) if df_f is not None and not df_f.empty else 0
+    c3.metric("⚠️ Buracos Encontrados", f"{buracos_qtd}")
+
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        st.markdown("#### 📂 Estrutura de Pastas")
+        st.dataframe(df_res['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}), use_container_width=True, hide_index=True)
+    with col_v2:
+        st.markdown("#### ⚠️ Relatório de Faltantes")
+        if df_f is not None and not df_f.empty:
+            st.dataframe(df_f, use_container_width=True, hide_index=True)
+        else:
+            st.success("Sequência completa. Nenhuma nota faltando!")
+
+    st.divider()
     st.download_button("📥 BAIXAR RESULTADO COMPLETO (.ZIP)", st.session_state['zip_completo'], "garimpo_final.zip", use_container_width=True)
