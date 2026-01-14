@@ -186,7 +186,7 @@ else:
     uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
 
     if uploaded_files:
-        if st.button("🚀 INICIAR GRANDE GARIMPO"):
+        if st.button("🚀 INICIAR GARIMPO"):
             processed_keys, sequencias, relatorio_lista = set(), {}, []
             zip_buffer = io.BytesIO()
             
