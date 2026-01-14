@@ -136,55 +136,50 @@ else:
         if st.button("🚀 INICIAR GRANDE GARIMPO"):
             processed_keys, sequencias, relatorio_lista = set(), {}, []
             
-            buffer_final = io.BytesIO()
-            buffer_todos = io.BytesIO()
+            # 1. CRIANDO O ZIP ORGANIZADO (Garimpo Final)
+            memoria_organizado = io.BytesIO()
+            with zipfile.ZipFile(memoria_organizado, "w", zipfile.ZIP_DEFLATED) as zf_org:
+                for file in uploaded_files:
+                    f_bytes = file.read()
+                    if file.name.lower().endswith('.zip'):
+                        process_zip_recursively(f_bytes, zf_org, processed_keys, sequencias, relatorio_lista, cnpj_limpo)
+                    elif file.name.lower().endswith('.xml'):
+                        resumo, is_p = identify_xml_info(f_bytes, cnpj_limpo, file.name)
+                        ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
+                        if ident not in processed_keys:
+                            processed_keys.add(ident)
+                            zf_org.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
+                            relatorio_lista.append(resumo)
+                            if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
+                                if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
+                                    s_key = (resumo["Tipo"], resumo["Série"])
+                                    if s_key not in sequencias: sequencias[s_key] = set()
+                                    sequencias[s_key].add(resumo["Número"])
             
-            with st.status("⛏️ Minerando...", expanded=True) as status:
-                with zipfile.ZipFile(buffer_final, "w", zipfile.ZIP_DEFLATED) as zf_final:
-                    for file in uploaded_files:
-                        f_bytes = file.read()
-                        if file.name.lower().endswith('.zip'):
-                            process_zip_recursively(f_bytes, zf_final, processed_keys, sequencias, relatorio_lista, cnpj_limpo)
-                        elif file.name.lower().endswith('.xml'):
-                            resumo, is_p = identify_xml_info(f_bytes, cnpj_limpo, file.name)
-                            ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
-                            if ident not in processed_keys:
-                                processed_keys.add(ident)
-                                zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
-                                relatorio_lista.append(resumo)
-                                if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
-                                    if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
-                                        s_key = (resumo["Tipo"], resumo["Série"])
-                                        if s_key not in sequencias: sequencias[s_key] = set()
-                                        sequencias[s_key].add(resumo["Número"])
-                
-                # CRIANDO A PASTA "TODOS" DENTRO DO ZIP
-                with zipfile.ZipFile(buffer_todos, "w", zipfile.ZIP_DEFLATED) as zf_todos:
-                    for item in relatorio_lista:
-                        # O segredo está aqui: adicionamos 'TODOS/' antes do nome do arquivo
-                        zf_todos.writestr(f"TODOS/{item['Arquivo']}", item['Conteúdo'])
-                
-                # Relatório de Faltantes
-                faltantes_data = []
-                for (tipo, serie), numeros in sequencias.items():
-                    if len(numeros) > 1:
-                        ideal = set(range(min(numeros), max(numeros) + 1))
-                        buracos = sorted(list(ideal - numeros))
-                        for b in buracos:
-                            faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
-                st.session_state['df_faltantes'] = pd.DataFrame(faltantes_data) if faltantes_data else pd.DataFrame()
-                
-                st.session_state['zip_final_data'] = buffer_final.getvalue()
-                st.session_state['zip_todos_data'] = buffer_todos.getvalue()
-                st.session_state['relatorio_data'] = relatorio_lista
-                st.session_state['garimpo_ok'] = True
-                
-                status.update(label="💰 Garimpo Concluído!", state="complete")
+            # 2. CRIANDO O ZIP COM A PASTA "TODOS" (Flat)
+            memoria_todos = io.BytesIO()
+            with zipfile.ZipFile(memoria_todos, "w", zipfile.ZIP_DEFLATED) as zf_todos:
+                for item in relatorio_lista:
+                    # Forçando a criação da pasta TODOS dentro do ZIP
+                    zf_todos.writestr(f"TODOS/{item['Arquivo']}", item['Conteúdo'])
 
-            if st.session_state['garimpo_ok']:
-                icons = ["💰", "🪙", "💎", "🥇", "✨"]
-                rain_html = "".join([f'<div class="gold-item" style="left:{random.randint(0,95)}%; animation-delay:{random.uniform(0,2.5)}s; font-size:{random.randint(25,45)}px;">{random.choice(icons)}</div>' for i in range(70)])
-                st.markdown(rain_html, unsafe_allow_html=True)
+            # 3. RELATÓRIO DE FALTANTES
+            faltantes_data = []
+            for (tipo, serie), numeros in sequencias.items():
+                if len(numeros) > 1:
+                    ideal = set(range(min(numeros), max(numeros) + 1))
+                    buracos = sorted(list(ideal - numeros))
+                    for b in buracos:
+                        faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
+            
+            # SALVANDO TUDO NO ESTADO DO STREAMLIT
+            st.session_state['df_faltantes'] = pd.DataFrame(faltantes_data) if faltantes_data else pd.DataFrame()
+            st.session_state['zip_final_data'] = memoria_organizado.getvalue()
+            st.session_state['zip_todos_data'] = memoria_todos.getvalue()
+            st.session_state['relatorio_data'] = relatorio_lista
+            st.session_state['garimpo_ok'] = True
+            
+            st.rerun()
 
 # --- RESULTADOS ---
 if st.session_state.get('garimpo_ok'):
@@ -203,7 +198,7 @@ if st.session_state.get('garimpo_ok'):
         filtro = df_res[df_res['Número'].astype(str).str.contains(busca) | df_res['Chave'].str.contains(busca)]
         if not filtro.empty:
             for _, row in filtro.iterrows():
-                st.download_button(f"📥 Baixar XML: {row['Tipo']} - Nº {row['Número']}", row['Conteúdo'], file_name=row['Arquivo'])
+                st.download_button(f"📥 Baixar XML: {row['Tipo']} - Nº {row['Número']}", row['Conteúdo'], file_name=row['Arquivo'], key=f"btn_{row['Chave']}")
         else: st.warning("Não encontrado.")
 
     st.markdown("---")
@@ -214,6 +209,7 @@ if st.session_state.get('garimpo_ok'):
     st.divider()
     
     # --- DOWNLOADS FINAIS ---
+    
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("#### 🏛️ GARIMPO FINAL")
@@ -222,5 +218,5 @@ if st.session_state.get('garimpo_ok'):
     
     with c2:
         st.markdown("#### 📦 TODOS")
-        st.caption("Uma única pasta chamada 'TODOS' com tudo misturado.")
+        st.caption("Pasta única chamada 'TODOS' com tudo misturado.")
         st.download_button("📥 BAIXAR TODOS (.ZIP)", st.session_state['zip_todos_data'], "TODOS.zip", use_container_width=True)
