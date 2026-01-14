@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -99,14 +99,26 @@ st.markdown("""
     h1 { font-size: 3.5rem !important; text-shadow: 2px 2px 0px #fff; }
     [data-testid="stMetric"] { background: linear-gradient(135deg, #ffffff 0%, #fff9e6 100%); border: 2px solid #d4af37; border-radius: 20px; padding: 25px; box-shadow: 8px 8px 20px rgba(0,0,0,0.12); }
     [data-testid="stMetricValue"] { color: #a67c00 !important; font-weight: 900 !important; font-size: 2.5rem !important; }
-    div.stButton > button { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%); color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 15px 30px; font-weight: 900 !important; border-radius: 50px; text-transform: uppercase; }
-    .gold-item { position: fixed; top: -50px; z-index: 9999; pointer-events: none; animation: drop 3.5s linear forwards; }
-    @keyframes drop { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
+    
+    /* ESTILO DOS BOTÕES DE DOWNLOAD */
+    div.stDownloadButton > button {
+        background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important;
+        color: #2b1e16 !important;
+        border: 2px solid #8a6d3b !important;
+        padding: 20px 10px !important;
+        font-size: 18px !important;
+        font-weight: 900 !important;
+        border-radius: 15px !important;
+        width: 100% !important;
+        text-transform: uppercase !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
+# INICIALIZAÇÃO DE ESTADO
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
@@ -129,85 +141,87 @@ with st.sidebar:
 if not st.session_state['confirmado']:
     st.info("💰 Para iniciar, identifique o CNPJ no menu lateral e clique em **LIBERAR OPERAÇÃO**.")
 else:
-    st.markdown(f"### 📦 ARQUIVOS: {format_cnpj(raw_cnpj)}")
-    uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
+    if not st.session_state['garimpo_ok']:
+        st.markdown(f"### 📦 JAZIDA DE ARQUIVOS: {format_cnpj(raw_cnpj)}")
+        uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
 
-    if uploaded_files:
-        if st.button("🚀 INICIAR GRANDE GARIMPO"):
-            processed_keys, sequencias, relatorio_lista = set(), {}, []
-            
-            # 1. ZIP ORGANIZADO
-            buf_org = io.BytesIO()
-            with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_DEFLATED) as zf:
-                for f in uploaded_files:
-                    f_bytes = f.read()
-                    if f.name.lower().endswith('.zip'):
-                        process_zip_recursively(f_bytes, zf, processed_keys, sequencias, relatorio_lista, cnpj_limpo)
-                    elif f.name.lower().endswith('.xml'):
-                        resumo, is_p = identify_xml_info(f_bytes, cnpj_limpo, f.name)
-                        ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else f.name
-                        if ident not in processed_keys:
-                            processed_keys.add(ident)
-                            zf.writestr(f"{resumo['Pasta']}/{f.name}", f_bytes)
-                            relatorio_lista.append(resumo)
-                            if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
-                                if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
-                                    s_key = (resumo["Tipo"], resumo["Série"])
-                                    if s_key not in sequencias: sequencias[s_key] = set()
-                                    sequencias[s_key].add(resumo["Número"])
-            
-            # 2. ZIP TODOS (COM PASTA INTERNA)
-            buf_todos = io.BytesIO()
-            with zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_DEFLATED) as zf_t:
-                for item in relatorio_lista:
-                    zf_t.writestr(f"TODOS/{item['Arquivo']}", item['Conteúdo'])
+        if uploaded_files:
+            if st.button("🚀 INICIAR GRANDE GARIMPO"):
+                processed_keys, sequencias, relatorio_lista = set(), {}, []
+                
+                # ZIP ORGANIZADO
+                buf_org = io.BytesIO()
+                with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for f in uploaded_files:
+                        f_bytes = f.read()
+                        if f.name.lower().endswith('.zip'):
+                            process_zip_recursively(f_bytes, zf, processed_keys, sequencias, relatorio_lista, cnpj_limpo)
+                        elif f.name.lower().endswith('.xml'):
+                            resumo, is_p = identify_xml_info(f_bytes, cnpj_limpo, f.name)
+                            ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else f.name
+                            if ident not in processed_keys:
+                                processed_keys.add(ident)
+                                zf.writestr(f"{resumo['Pasta']}/{f.name}", f_bytes)
+                                relatorio_lista.append(resumo)
+                                if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
+                                    if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
+                                        s_key = (resumo["Tipo"], resumo["Série"])
+                                        if s_key not in sequencias: sequencias[s_key] = set()
+                                        sequencias[s_key].add(resumo["Número"])
+                
+                # ZIP TODOS (PASTA TODOS/)
+                buf_todos = io.BytesIO()
+                with zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_DEFLATED) as zf_t:
+                    for item in relatorio_lista:
+                        zf_t.writestr(f"TODOS/{item['Arquivo']}", item['Conteúdo'])
 
-            # FALTANTES
-            faltantes_data = []
-            for (tipo, serie), numeros in sequencias.items():
-                if len(numeros) > 1:
-                    ideal = set(range(min(numeros), max(numeros) + 1))
-                    buracos = sorted(list(ideal - numeros))
-                    for b in buracos:
-                        faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
-            
-            st.session_state.update({
-                'df_faltantes': pd.DataFrame(faltantes_data) if faltantes_data else pd.DataFrame(),
-                'zip_org': buf_org.getvalue(),
-                'zip_todos': buf_todos.getvalue(),
-                'relatorio_data': relatorio_lista,
-                'garimpo_ok': True
-            })
+                # SALVAR NO ESTADO
+                st.session_state.update({
+                    'zip_org': buf_org.getvalue(),
+                    'zip_todos': buf_todos.getvalue(),
+                    'relatorio': relatorio_lista,
+                    'garimpo_ok': True
+                })
+                st.rerun()
+
+    else:
+        # --- EXIBIÇÃO DOS RESULTADOS (SÓ APARECE DEPOIS DO GARIMPO) ---
+        st.success("✅ Mineração concluída com sucesso!")
+        
+        df_res = pd.DataFrame(st.session_state['relatorio'])
+        c1, c2 = st.columns(2)
+        c1.metric("📦 TOTAL DE XMLs", len(df_res))
+        c2.metric("✨ NOTAS DO CLIENTE", len(df_res[df_res['Pasta'].str.contains("EMITIDOS")]))
+
+        st.divider()
+        st.markdown("### 📥 ESCOLHA SEU TESOURO")
+        
+        # OS DOIS BOTÕES LADO A LADO
+        col_down1, col_down2 = st.columns(2)
+        
+        with col_down1:
+            st.markdown("**📂 MODELO ORGANIZADO**")
+            st.caption("Arquivos separados por pastas (Emitidas/Recebidas)")
+            st.download_button(
+                label="📥 BAIXAR GARIMPO FINAL",
+                data=st.session_state['zip_org'],
+                file_name="garimpo_final.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+
+        with col_down2:
+            st.markdown("**📦 MODELO TODOS**")
+            st.caption("Tudo dentro de uma única pasta chamada 'TODOS'")
+            st.download_button(
+                label="📥 BAIXAR TODOS",
+                data=st.session_state['zip_todos'],
+                file_name="TODOS.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+
+        st.divider()
+        if st.button("⛏️ NOVO GARIMPO"):
+            st.session_state['garimpo_ok'] = False
             st.rerun()
-
-# --- RESULTADOS ---
-if st.session_state.get('garimpo_ok'):
-    st.divider()
-    df_res = pd.DataFrame(st.session_state['relatorio_data'])
-    c_m1, c_m2, c_m3 = st.columns(3)
-    c_m1.metric("📦 VOLUME", len(df_res))
-    emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
-    c_m2.metric("✨ CLIENTE", emitidas)
-    df_f = st.session_state['df_faltantes']
-    c_m3.metric("⚠️ BURACOS", len(df_f))
-
-    st.markdown("---")
-    # DOWNLOADS EM DESTAQUE (Agora eles aparecem aqui, garantido!)
-    st.markdown("### 📥 EXTRAIR TESOURO")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.download_button("📂 BAIXAR GARIMPO FINAL (ORGANIZADO)", st.session_state['zip_org'], "garimpo_final.zip", use_container_width=True)
-    with col_b:
-        st.download_button("📦 BAIXAR TODOS (PASTA ÚNICA)", st.session_state['zip_todos'], "TODOS.zip", use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### 🔍 PENEIRA INDIVIDUAL")
-    busca = st.text_input("Número ou Chave:")
-    if busca:
-        filtro = df_res[df_res['Número'].astype(str).str.contains(busca) | df_res['Chave'].str.contains(busca)]
-        for _, row in filtro.iterrows():
-            st.download_button(f"📥 XML Nº {row['Número']}", row['Conteúdo'], row['Arquivo'], key=f"dl_{random.random()}")
-
-    st.markdown("### ⚠️ RELATÓRIO DE FALTANTES")
-    if not df_f.empty: st.dataframe(df_f, use_container_width=True, hide_index=True)
-    else: st.success("Mina íntegra!")
