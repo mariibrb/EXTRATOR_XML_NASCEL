@@ -25,7 +25,7 @@ def get_xml_key(root, content_str):
     return None
 
 def identify_xml_info(content_bytes, client_cnpj):
-    """Identifica tipo, fluxo (entrada/saída), série e chave."""
+    """Identifica tipo, fluxo, série e chave."""
     client_cnpj = "".join(filter(str.isdigit, client_cnpj))
     try:
         content_str = content_bytes.decode('utf-8', errors='ignore')
@@ -66,7 +66,6 @@ def identify_xml_info(content_bytes, client_cnpj):
         return "NAO_IDENTIFICADOS", None
 
 def add_to_dict(filepath, content, xml_files_dict, client_cnpj, processed_keys):
-    """Valida duplicidade e organiza nas pastas por série."""
     simple_name = os.path.basename(filepath)
     if not simple_name or not simple_name.lower().endswith('.xml'):
         return
@@ -105,81 +104,83 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
 
 # --- INTERFACE ---
 
-st.set_page_config(page_title="Garimpeiro de XML v2.1", page_icon="⛏️", layout="wide")
+st.set_page_config(page_title="Garimpeiro de XML v2.2", page_icon="⛏️", layout="wide")
 
 st.title("⛏️ Garimpeiro de XML 💎")
-st.subheader("Minerador inteligente com Barra de Progresso Real")
 
-st.markdown("""
-<div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #dcdde1;">
-    <h4 style="margin-top:0;">🦊 Status do Garimpo</h4>
-    Arraste sua pasta aberta ou ZIPs e acompanhe a barra de porcentagem abaixo!
-</div>
-""", unsafe_allow_html=True)
-
-st.write("")
-
+# Sidebar
 with st.sidebar:
-    st.header("⚙️ Configurações")
+    st.header("⚙️ Painel de Controle")
     cnpj_input = st.text_input("CNPJ do Cliente (apenas números)", placeholder="Ex: 12345678000199")
     st.divider()
-    st.info("🛡️ Anti-Duplicidade Ativa")
+    st.info("🛡️ Filtro Anti-Duplicidade Ativa")
     st.info("📊 Separação por Série Ativa")
 
+# Container Principal
+st.markdown("### 📥 Carregamento")
 uploaded_files = st.file_uploader(
-    "Selecione todos os arquivos da sua pasta (Ctrl+A) ou arraste a pasta aqui", 
+    "Arraste sua pasta ou selecione os arquivos (Ctrl+A)", 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    if st.button("⛏️ INICIAR GARIMPO COM PORCENTAGEM", use_container_width=True):
+    if st.button("⛏️ INICIAR GARIMPO TOTAL", use_container_width=True):
         all_xml_data = {}
         processed_keys = set()
         
         total_files = len(uploaded_files)
-        # Cria a barra de progresso com porcentagem
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        
+        # --- ÁREA DE PROGRESSO GERAL ---
+        st.divider()
+        st.markdown("### 📊 Progresso Geral do Garimpo")
+        overall_bar = st.progress(0)
+        col_status1, col_status2 = st.columns(2)
+        status_perc = col_status1.empty()
+        status_count = col_status2.empty()
+        
+        current_file_text = st.empty() # Mostra o arquivo atual em miniatura abaixo
         
         for i, file in enumerate(uploaded_files):
-            # Calcula a porcentagem
-            percent_complete = int(((i + 1) / total_files) * 100)
-            
-            # Atualiza o texto de status e a barra
-            status_text.markdown(f"⛏️ **Minerando:** {file.name} | **{i+1}/{total_files}** arquivos ({percent_complete}%)")
-            progress_bar.progress((i + 1) / total_files)
-            
+            # Processamento
             process_recursively(file.name, file.read(), all_xml_data, cnpj_input, processed_keys)
-
-        status_text.empty() # Limpa o texto ao terminar
-
-        if all_xml_data:
-            st.balloons()
-            st.success(f"✨ Garimpo Concluído! {len(all_xml_data)} XMLs únicos organizados.")
             
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path, data in all_xml_data.items():
-                    zf.writestr(path, data)
+            # Atualização da Barra Geral
+            percent = (i + 1) / total_files
+            overall_bar.progress(percent)
             
-            resumo = {}
-            for path in all_xml_data.keys():
-                partes = path.split('/')
-                cat = " - ".join([p.replace('_', ' ') for p in partes[:-1]])
-                resumo[cat] = resumo.get(cat, 0) + 1
-            
-            st.write("### 📊 Inventário Final:")
-            st.table(resumo)
+            # Atualização dos Indicadores
+            status_perc.metric("Concluído", f"{int(percent * 100)}%")
+            status_count.metric("Arquivos Lidos", f"{i+1} de {total_files}")
+            current_file_text.caption(f"⛏️ Minerando agora: {file.name}")
 
-            st.download_button(
-                label="📥 BAIXAR MEU TESOURO (.ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name="garimpo_xml_final.zip",
-                mime="application/zip",
-                use_container_width=True
-            )
-        else:
-            st.error("💎 Ops! Não encontramos diamantes (XML) nessa mina.")
+        # Limpeza e Sucesso
+        current_file_text.empty()
+        st.balloons()
+        st.success(f"✨ Garimpo Finalizado! {len(all_xml_data)} XMLs únicos organizados.")
+        
+        # Criar ZIP
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for path, data in all_xml_data.items():
+                zf.writestr(path, data)
+        
+        # Resumo
+        resumo = {}
+        for path in all_xml_data.keys():
+            partes = path.split('/')
+            cat = " - ".join([p.replace('_', ' ') for p in partes[:-1]])
+            resumo[cat] = resumo.get(cat, 0) + 1
+        
+        st.write("### 💎 Inventário do Tesouro:")
+        st.table(resumo)
+
+        st.download_button(
+            label="📥 BAIXAR TUDO ORGANIZADO (.ZIP)",
+            data=zip_buffer.getvalue(),
+            file_name="garimpo_xml_finalizado.zip",
+            mime="application/zip",
+            use_container_width=True
+        )
 
 st.divider()
-st.caption("🦊 Garimpeiro v2.1: Agora com barra de progresso em tempo real.")
+st.caption("FoxHelper: Sistema de extração recursiva e triagem por série.")
