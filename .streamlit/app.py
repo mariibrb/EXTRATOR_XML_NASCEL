@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (PRECISÃO GARIMPEIRA) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -82,67 +82,62 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- CSS CLONE DA IMAGEM ---
-st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
+# --- DESIGN GOLD MINER (CHAMPAGNE & CAFE) ---
+st.set_page_config(page_title="O Garimpeiro v9.0", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Degradê de fundo Champagne idêntico à imagem */
+    /* Background Degradê Champagne Real */
     .stApp {
         background: linear-gradient(180deg, #FFFFFF 0%, #E2D1C3 100%);
     }
     
-    /* Sidebar com o mesmo degradê e bordas finas */
+    /* Sidebar Dourada Luxo */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%);
         border-right: 1px solid #C4A484;
     }
     
-    /* Títulos e textos em Marrom Café Profundo */
-    h1, h2, h3, p, label, .stMetric label, [data-testid="stMarkdownContainer"] p {
+    /* Textos em Marrom Café Profundo */
+    h1, h2, h3, p, label, .stMetric label, [data-testid="stMetricValue"], [data-testid="stMarkdownContainer"] p {
         color: #3D2B1F !important;
         font-family: 'Playfair Display', serif;
     }
 
-    /* Cards de Métricas arredondados e com brilho */
+    /* Cards de Métricas arredondados do jogo */
     [data-testid="stMetric"] {
         background-color: rgba(255, 255, 255, 0.45);
-        border: 1px solid #D4AF37;
+        border: 2px solid #D4AF37;
         border-radius: 20px;
         box-shadow: 0 4px 15px rgba(184, 134, 11, 0.1);
     }
 
-    /* O Botão Dourado Incrível da Foto */
+    /* Botão Dourado com Relevo Gold Miner */
     div.stButton > button {
         background: linear-gradient(180deg, #F9D976 0%, #D4AF37 100%);
         color: #3D2B1F !important;
-        border: 1px solid #B8860B;
+        border: 2px solid #B8860B;
         padding: 15px 40px;
         font-size: 18px;
-        font-weight: bold;
-        border-radius: 35px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        font-weight: 800;
+        border-radius: 40px;
+        box-shadow: 0 5px 0px #8B4513, 0 8px 15px rgba(0,0,0,0.2);
         width: 100%;
-        transition: 0.3s ease;
+        transition: 0.1s;
     }
     
-    div.stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 20px rgba(184, 134, 11, 0.4);
+    div.stButton > button:active {
+        transform: translateY(4px);
+        box-shadow: 0 1px 0px #8B4513;
     }
 
-    /* Chuva de Ouro Dinâmica e Espaçada */
+    /* Chuva de Ouro Aleatória (Pepitas e Diamantes) */
     .gold-particle {
-        position: fixed;
-        background: radial-gradient(circle, #FFD700 0%, #B8860B 100%);
-        border-radius: 50% 20% 50% 20%;
-        box-shadow: 0 0 10px #FFD700;
-        z-index: 9999;
-        pointer-events: none;
-        animation: fall linear forwards;
+        position: fixed; top: -50px; z-index: 9999;
+        pointer-events: none; animation: fall linear forwards;
     }
     @keyframes fall {
-        0% { transform: translateY(-50px) rotate(0deg); opacity: 1; }
+        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
         100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
     }
     </style>
@@ -153,37 +148,36 @@ st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
-# --- SIDEBAR DOURADA ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.markdown("### ⭐ Identificação")
     raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
     
     if len(cnpj_limpo) == 14:
-        st.markdown(f"**Cliente Selecionado:**\n{format_cnpj(raw_cnpj)}")
-        if st.button("✅ CONFIRMAR CLIENTE"):
+        st.markdown(f"**Mina Identificada:**\n{format_cnpj(raw_cnpj)}")
+        if st.button("✅ LIBERAR GARIMPO"):
             st.session_state['confirmado'] = True
             st.rerun()
     
     st.divider()
-    if st.button("🗑️ Resetar Jazida"):
+    if st.button("🗑️ Resetar Tudo"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- FLUXO DE TRABALHO ---
+# --- ÁREA DE TRABALHO ---
 if not st.session_state['confirmado']:
-    st.info("👋 Digite o CNPJ completo no menu lateral e clique em **CONFIRMAR CLIENTE** para abrir a mina.")
+    st.info("💰 Para começar a minerar, identifique o CNPJ no menu lateral e clique em **LIBERAR GARIMPO**.")
 else:
-    # TROCAMOS O JARRO POR PICARETAS OU CAIXAS
     st.markdown(f"### 📦 Depósito de Brutos: {format_cnpj(raw_cnpj)}")
-    uploaded_files = st.file_uploader("Arraste aqui seus arquivos XML ou ZIP:", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs:", accept_multiple_files=True)
 
     if uploaded_files:
-        if st.button("🌟 INICIAR GARIMPO"):
+        if st.button("🌟 INICIAR GRANDE GARIMPO"):
             processed_keys, sequencias, relatorio_lista = set(), {}, []
             zip_buffer = io.BytesIO()
             
-            with st.status("💎 Minerando...", expanded=True) as status:
+            with st.status("💎 Minerando pepitas...", expanded=True) as status:
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
                     for i, file in enumerate(uploaded_files):
                         f_bytes = file.read()
@@ -201,18 +195,20 @@ else:
                                     s_key = (doc_base, resumo["Série"])
                                     if s_key not in sequencias: sequencias[s_key] = set()
                                     sequencias[s_key].add(resumo["Número"])
-                status.update(label="✅ Garimpo finalizado!", state="complete")
+                status.update(label="✨ Garimpo concluído com sucesso!", state="complete")
 
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
                 
-                # CHUVA DE OURO REALISTA (ESPAÇADA)
+                # CHUVA DE OURO REALISTA (MODO GOLD MINER)
+                icons = ["💰", "🪙", "💎", "🥇", "✨", "⛏️"]
                 rain_html = ""
-                for i in range(80):
+                for i in range(85):
+                    icon = random.choice(icons)
                     left = random.randint(0, 98)
-                    delay = random.uniform(0, 2)
-                    size = random.randint(12, 28)
-                    rain_html += f'<div class="gold-particle" style="left:{left}%; top:-50px; width:{size}px; height:{size}px; animation-delay:{delay}s; animation-duration:{random.uniform(2, 4)}s;"></div>'
+                    delay = random.uniform(0, 2.5)
+                    size = random.randint(15, 35)
+                    rain_html += f'<div class="gold-particle" style="left:{left}%; top:-50px; font-size:{size}px; animation-delay:{delay}s; animation-duration:{random.uniform(2.5, 4.5)}s;">{icon}</div>'
                 st.markdown(rain_html, unsafe_allow_html=True)
 
 # --- RESULTADOS ---
@@ -220,14 +216,14 @@ if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📂 Volume Extraído", f"{len(df_res)} itens")
-    col2.metric("💎 Notas do Cliente", f"{len(df_res[df_res['Pasta'].str.contains('EMITIDOS')])}")
-    col3.metric("⚠️ Buracos", "Analisar abaixo")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📦 Volume minerado", f"{len(df_res)} itens")
+    c2.metric("✨ Notas do Cliente", f"{len(df_res[df_res['Pasta'].str.contains('EMITIDOS')])}")
+    c3.metric("⚠️ Buracos", "Analisar relatório")
 
     st.download_button(
         label="📥 BAIXAR RESULTADO COMPLETO I .ZIP",
         data=st.session_state['zip_completo'],
-        file_name=f"garimpo_{cnpj_limpo}.zip",
+        file_name=f"garimpo_finalizado.zip",
         use_container_width=True
     )
