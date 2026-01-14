@@ -155,8 +155,6 @@ else:
                                         if s_key not in sequencias: sequencias[s_key] = set()
                                         sequencias[s_key].add(resumo["Número"])
                 
-                status.update(label="💰 Garimpo Concluído!", state="complete")
-                
                 # Relatório de Faltantes
                 faltantes_data = []
                 for (tipo, serie), numeros in sequencias.items():
@@ -166,18 +164,19 @@ else:
                         for b in buracos:
                             faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
                 st.session_state['df_faltantes'] = pd.DataFrame(faltantes_data) if faltantes_data else pd.DataFrame()
+                status.update(label="💰 Garimpo Concluído!", state="complete")
 
             if relatorio_lista:
-                # Criar também a Extração Bruta (Tudo em uma pasta só)
-                bruto_buffer = io.BytesIO()
-                with zipfile.ZipFile(bruto_buffer, "w", zipfile.ZIP_DEFLATED) as zf_bruto:
+                # Criar o arquivo TODOS (Pasta única, sem subdivisão, apenas arquivos únicos)
+                todos_buffer = io.BytesIO()
+                with zipfile.ZipFile(todos_buffer, "w", zipfile.ZIP_DEFLATED) as zf_todos:
                     for item in relatorio_lista:
-                        zf_bruto.writestr(f"COLECAO_TOTAL/{item['Arquivo']}", item['Conteúdo'])
+                        zf_todos.writestr(item['Arquivo'], item['Conteúdo'])
                 
                 st.session_state.update({
                     'relatorio': relatorio_lista, 
-                    'zip_completo': zip_buffer.getvalue(), 
-                    'zip_bruto': bruto_buffer.getvalue(),
+                    'zip_final': zip_buffer.getvalue(), 
+                    'zip_todos': todos_buffer.getvalue(),
                     'garimpo_ok': True
                 })
                 icons = ["💰", "🪙", "💎", "🥇", "✨"]
@@ -211,14 +210,14 @@ if st.session_state.get('garimpo_ok'):
 
     st.divider()
     
-    # --- OPÇÕES DE DOWNLOAD ---
-    col_down1, col_down2 = st.columns(2)
-    with col_down1:
-        st.markdown("#### 🏛️ EXTRAÇÃO ORGANIZADA")
-        st.info("Pastas divididas por: Emitidas/Recebidas, Tipo e Status.")
-        st.download_button("📥 BAIXAR TESOURO ESTRUTURADO", st.session_state['zip_completo'], "garimpo_organizado.zip", use_container_width=True)
+    # --- DOWNLOADS FINAIS ---
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### 🏛️ GARIMPO FINAL")
+        st.caption("Organizado por pastas: Tipo, Série e Status.")
+        st.download_button("📥 BAIXAR GARIMPO FINAL (.ZIP)", st.session_state['zip_final'], "garimpo_final.zip", use_container_width=True)
     
-    with col_down2:
-        st.markdown("#### 📦 EXTRAÇÃO BRUTA (TUDO JUNTO)")
-        st.warning("Sem divisões. Todos os XMLs únicos em uma pasta só.")
-        st.download_button("📥 BAIXAR COLEÇÃO TOTAL", st.session_state['zip_bruto'], "garimpo_bruto.zip", use_container_width=True)
+    with c2:
+        st.markdown("#### 📦 TODOS")
+        st.caption("Pasta única com todos os arquivos únicos misturados.")
+        st.download_button("📥 BAIXAR TODOS (.ZIP)", st.session_state['zip_todos'], "TODOS.zip", use_container_width=True)
