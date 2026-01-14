@@ -5,7 +5,7 @@ import os
 
 def identify_xml_type(content_bytes):
     """
-    Analisa o conteúdo do XML para identificar o tipo de documento.
+    Lê o interior do XML para saber se é NF-e, CT-e, etc.
     """
     try:
         content = content_bytes.decode('utf-8', errors='ignore').lower()
@@ -30,16 +30,17 @@ def identify_xml_type(content_bytes):
 
 def add_to_dict(filepath, content, xml_files_dict):
     """
-    Adiciona ao dicionário com triagem de tipo e evita duplicatas.
+    Organiza no dicionário com a pasta correta e evita duplicados.
     """
     simple_name = os.path.basename(filepath)
     if not simple_name or not simple_name.lower().endswith('.xml'):
         return
 
     doc_type = identify_xml_type(content)
+    # Define o caminho: Pasta_Tipo/Nome_do_Arquivo.xml
     full_path_in_zip = f"{doc_type}/{simple_name}"
     
-    # Se o nome já existir na mesma categoria, renomeia com sufixo
+    # Se houver arquivo com mesmo nome, adiciona um contador
     name_to_save = full_path_in_zip
     counter = 1
     while name_to_save in xml_files_dict:
@@ -49,78 +50,95 @@ def add_to_dict(filepath, content, xml_files_dict):
     
     xml_files_dict[name_to_save] = content
 
-def process_anything(file_name, file_bytes, xml_files_dict):
+def process_recursively(file_name, file_bytes, xml_files_dict):
     """
-    A função mestre: decide se abre como ZIP ou se guarda como XML.
-    Funciona para arquivos soltos ou vindos de dentro de um ZIP.
+    FUNÇÃO CHAVE: Abre ZIPs dentro de ZIPs e processa arquivos soltos.
     """
-    # 1. Se for um ZIP (ou arquivo que parece ZIP), tentamos abrir
+    # Se for um ZIP, precisamos abrir e olhar tudo lá dentro
     if file_name.lower().endswith('.zip'):
         try:
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-                for internal_file in z.infolist():
-                    if internal_file.is_dir():
+                for internal_info in z.infolist():
+                    if internal_info.is_dir():
                         continue
-                    # Extrai o conteúdo e processa de novo (recursividade para ZIP dentro de ZIP)
-                    internal_content = z.read(internal_file.filename)
-                    process_anything(internal_file.filename, internal_content, xml_files_dict)
+                    
+                    # Lê o conteúdo do arquivo interno
+                    internal_content = z.read(internal_info.filename)
+                    internal_name = internal_info.filename
+                    
+                    # RECURSIVIDADE: Se o arquivo dentro do ZIP for outro ZIP, chama a função de novo
+                    if internal_name.lower().endswith('.zip') or internal_name.lower().endswith('.xml'):
+                        process_recursively(internal_name, internal_content, xml_files_dict)
         except zipfile.BadZipFile:
-            pass # Ignora se o arquivo .zip estiver corrompido
+            pass
             
-    # 2. Se for um XML
+    # Se for um XML solto
     elif file_name.lower().endswith('.xml'):
         add_to_dict(file_name, file_bytes, xml_files_dict)
 
-# --- INTERFACE ---
+# --- CONFIGURAÇÃO DO STREAMLIT ---
 
-st.set_page_config(page_title="Extrator Pro XML", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Extrator Total de XML", page_icon="📂", layout="wide")
 
-st.title("📦 Extrator Pro: XML, ZIP e Pastas")
+st.title("📂 Extrator Total de XML")
+st.subheader("Varredura em Pastas, ZIPs e Sub-ZIPs")
+
 st.markdown("""
-Jogue aqui qualquer mistura de arquivos. O sistema vai varrer **todas as camadas** de pastas e arquivos compactados para encontrar seus XMLs e separá-los por categoria.
+**Instruções de uso:**
+1. No seu computador, entre na sua pasta, dê um **Ctrl + A** (para selecionar todos os arquivos e pastas) e arraste tudo para cá.
+2. O sistema vai abrir cada ZIP individualmente, procurar XMLs e separá-los por categoria.
 """)
 
 uploaded_files = st.file_uploader(
-    "Arraste Pastas, ZIPs ou arquivos soltos", 
+    "Arraste seus arquivos e pastas aqui", 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    if st.button("🔍 Iniciar Varredura Profunda"):
-        all_xmls = {}
+    if st.button("🚀 Iniciar Extração Profunda"):
+        all_xml_data = {} # { "Pasta/Arquivo.xml": bytes }
         
-        with st.spinner("Garimpando arquivos..."):
-            for uploaded_file in uploaded_files:
-                # O segredo: processar cada arquivo individualmente
-                f_bytes = uploaded_file.read()
-                f_name = uploaded_file.name
-                process_anything(f_name, f_bytes, all_xmls)
+        progress_text = "Processando arquivos... aguarde."
+        my_bar = st.progress(0, text=progress_text)
         
-        if all_xmls:
-            st.success(f"✅ Sucesso! Encontramos {len(all_xmls)} XMLs.")
+        for index, uploaded_file in enumerate(uploaded_files):
+            # Lemos o arquivo enviado pelo usuário
+            f_bytes = uploaded_file.read()
+            f_name = uploaded_file.name
             
-            # Criar o ZIP de saída
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as final_zip:
-                for path, data in all_xmls.items():
-                    final_zip.writestr(path, data)
+            # Chama a função que mergulha em ZIPs e XMLs
+            process_recursively(f_name, f_bytes, all_xml_data)
             
-            # Resumo visual
-            cols = st.columns(4)
+            # Atualiza barra de progresso
+            progress = (index + 1) / len(uploaded_files)
+            my_bar.progress(progress, text=progress_text)
+            
+        if all_xml_data:
+            st.success(f"✅ Finalizado! {len(all_xml_data)} arquivos XML encontrados e organizados.")
+            
+            # Criar o ZIP Final
+            final_zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(final_zip_buffer, "w", zipfile.ZIP_DEFLATED) as z_final:
+                for path_in_zip, data in all_xml_data.items():
+                    z_final.writestr(path_in_zip, data)
+            
+            # Exibir resumo por categoria
             resumo = {}
-            for p in all_xmls.keys():
-                cat = p.split('/')[0]
-                resumo[cat] = resumo.get(cat, 0) + 1
+            for path in all_xml_data.keys():
+                categoria = path.split('/')[0]
+                resumo[categoria] = resumo.get(categoria, 0) + 1
             
-            for i, (cat, count) in enumerate(resumo.items()):
-                cols[i % 4].metric(cat, f"{count} un")
-
+            st.write("### Resumo da Organização:")
+            cols = st.columns(len(resumo))
+            for i, (cat, qtd) in enumerate(resumo.items()):
+                cols[i].metric(cat, f"{qtd} un")
+            
             st.download_button(
-                label="📥 Baixar Tudo Organizado (.ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name="xmls_organizados.zip",
+                label="📥 Baixar ZIP com XMLs Organizados",
+                data=final_zip_buffer.getvalue(),
+                file_name="xmls_extraidos_e_organizados.zip",
                 mime="application/zip",
                 use_container_width=True
             )
         else:
-            st.error("Nenhum XML foi encontrado. Verifique se os arquivos são válidos.")
+            st.error("Nenhum XML foi encontrado nos arquivos enviados.")
