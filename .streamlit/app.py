@@ -35,7 +35,6 @@ def identify_xml_info(content_bytes, client_cnpj):
         
         root = ET.fromstring(clean_content)
         
-        # 1. Tipo de Documento
         doc_type = "Outros"
         tag_lower = content_str.lower()
         if '<infnfe' in tag_lower:
@@ -44,7 +43,6 @@ def identify_xml_info(content_bytes, client_cnpj):
         elif '<infmdfe' in tag_lower: doc_type = "MDF-e"
         elif '<evento' in tag_lower or '<infresevento' in tag_lower: doc_type = "Eventos"
 
-        # 2. Emitente e Série
         emit_cnpj = ""
         serie = "0"
         
@@ -52,16 +50,13 @@ def identify_xml_info(content_bytes, client_cnpj):
         if emit is not None:
             emit_cnpj = "".join(filter(str.isdigit, emit.text))
             
-        # Busca a tag <serie>
         serie_tag = root.find(".//ide/serie")
         if serie_tag is not None:
             serie = serie_tag.text
 
-        # 3. Define Fluxo e Estrutura de Pastas
         chave = get_xml_key(root, content_str)
         
         if client_cnpj and emit_cnpj == client_cnpj:
-            # Para emissão própria, adicionamos a Série na pasta
             pasta_final = f"EMITIDOS_CLIENTE/{doc_type}/Serie_{serie}"
         else:
             pasta_final = f"RECEBIDOS_TERCEIROS/{doc_type}"
@@ -86,7 +81,6 @@ def add_to_dict(filepath, content, xml_files_dict, client_cnpj, processed_keys):
 
     full_path_in_zip = f"{subfolder}/{simple_name}"
     
-    # Tratamento de colisão de nomes
     name_to_save = full_path_in_zip
     counter = 1
     while name_to_save in xml_files_dict:
@@ -111,16 +105,15 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
 
 # --- INTERFACE ---
 
-st.set_page_config(page_title="Garimpeiro de XML v2", page_icon="⛏️", layout="wide")
+st.set_page_config(page_title="Garimpeiro de XML v2.1", page_icon="⛏️", layout="wide")
 
 st.title("⛏️ Garimpeiro de XML 💎")
-st.subheader("Minerador com separação por Série e Marketplace!")
+st.subheader("Minerador inteligente com Barra de Progresso Real")
 
 st.markdown("""
 <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #dcdde1;">
-    <h4 style="margin-top:0;">🦊 Novidade no Garimpo!</h4>
-    Agora, as notas que o seu cliente emitiu serão separadas por <b>Série</b> automaticamente. 
-    Perfeito para conferir Mercado Livre, Magalu e sua própria loja!
+    <h4 style="margin-top:0;">🦊 Status do Garimpo</h4>
+    Arraste sua pasta aberta ou ZIPs e acompanhe a barra de porcentagem abaixo!
 </div>
 """, unsafe_allow_html=True)
 
@@ -130,59 +123,63 @@ with st.sidebar:
     st.header("⚙️ Configurações")
     cnpj_input = st.text_input("CNPJ do Cliente (apenas números)", placeholder="Ex: 12345678000199")
     st.divider()
-    st.info("🛡️ Anti-Duplicidade Ativo")
+    st.info("🛡️ Anti-Duplicidade Ativa")
     st.info("📊 Separação por Série Ativa")
 
 uploaded_files = st.file_uploader(
-    "Arraste sua pasta ou arquivos aqui", 
+    "Selecione todos os arquivos da sua pasta (Ctrl+A) ou arraste a pasta aqui", 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    if st.button("⛏️ INICIAR GARIMPO PROFUNDO", use_container_width=True):
+    if st.button("⛏️ INICIAR GARIMPO COM PORCENTAGEM", use_container_width=True):
         all_xml_data = {}
         processed_keys = set()
         
-        progress = st.progress(0)
-        status = st.empty()
+        total_files = len(uploaded_files)
+        # Cria a barra de progresso com porcentagem
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
         for i, file in enumerate(uploaded_files):
-            status.text(f"Explorando: {file.name}")
+            # Calcula a porcentagem
+            percent_complete = int(((i + 1) / total_files) * 100)
+            
+            # Atualiza o texto de status e a barra
+            status_text.markdown(f"⛏️ **Minerando:** {file.name} | **{i+1}/{total_files}** arquivos ({percent_complete}%)")
+            progress_bar.progress((i + 1) / total_files)
+            
             process_recursively(file.name, file.read(), all_xml_data, cnpj_input, processed_keys)
-            progress.progress((i + 1) / len(uploaded_files))
 
-        status.empty()
+        status_text.empty() # Limpa o texto ao terminar
 
         if all_xml_data:
             st.balloons()
-            st.success(f"✨ Tesouro extraído! {len(all_xml_data)} XMLs únicos organizados.")
+            st.success(f"✨ Garimpo Concluído! {len(all_xml_data)} XMLs únicos organizados.")
             
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                 for path, data in all_xml_data.items():
                     zf.writestr(path, data)
             
-            # Resumo em tabela
             resumo = {}
             for path in all_xml_data.keys():
-                # Tenta simplificar o nome da pasta para o resumo
                 partes = path.split('/')
-                # Ex: EMITIDOS CLIENTE - NF-e - Serie 1
                 cat = " - ".join([p.replace('_', ' ') for p in partes[:-1]])
                 resumo[cat] = resumo.get(cat, 0) + 1
             
-            st.write("### 📊 Inventário do Garimpo:")
+            st.write("### 📊 Inventário Final:")
             st.table(resumo)
 
             st.download_button(
-                label="📥 BAIXAR TUDO SEPARADO POR SÉRIE (.ZIP)",
+                label="📥 BAIXAR MEU TESOURO (.ZIP)",
                 data=zip_buffer.getvalue(),
-                file_name="garimpo_por_serie.zip",
+                file_name="garimpo_xml_final.zip",
                 mime="application/zip",
                 use_container_width=True
             )
         else:
-            st.error("💎 Não encontramos nenhum XML válido.")
+            st.error("💎 Ops! Não encontramos diamantes (XML) nessa mina.")
 
 st.divider()
-st.caption("🦊 Dica do Garimpeiro: Se a série 1 for ML e a série 2 for Magalu, elas estarão em pastas separadas dentro de EMITIDOS.")
+st.caption("🦊 Garimpeiro v2.1: Agora com barra de progresso em tempo real.")
