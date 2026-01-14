@@ -91,71 +91,86 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN PREMIUM GOLD RUSH ---
-st.set_page_config(page_title="O Garimpeiro XML", layout="wide", page_icon="⛏️")
+# --- DESIGN ONYX & GOLD UNIFICADO ---
+st.set_page_config(page_title="Garimpeiro XML", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Fundo Elegante */
-    .stApp { background: linear-gradient(180deg, #ffffff 0%, #f3e5ab 100%); }
+    /* Área Principal Clara para leitura */
+    .stApp { background-color: #FFFFFF; }
     
-    h1 { color: #8e6e1e !important; font-family: 'Playfair Display', serif; font-weight: 900; text-align: center; font-size: 3rem; margin-bottom: 0px; }
-    
-    /* Botão Gold */
-    div.stButton > button:first-child {
-        background: linear-gradient(145deg, #bf953f, #fcf6ba, #b38728, #fbf5b7, #aa771c);
-        color: #4a3701; border: none; padding: 18px 50px; font-size: 22px; font-weight: 800; border-radius: 12px;
-        box-shadow: 0 10px 20px rgba(0,0,0,0.15); transition: all 0.4s ease; text-transform: uppercase; letter-spacing: 2px;
+    /* Sidebar Onyx (Escuro) */
+    [data-testid="stSidebar"] {
+        background-color: #1A1A1A;
+        color: #D4AF37;
     }
-    div.stButton > button:first-child:hover { transform: translateY(-3px); box-shadow: 0 15px 25px rgba(184, 134, 11, 0.4); border: 1px solid #fff; }
+    [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label {
+        color: #D4AF37 !important;
+    }
+    
+    h1 { color: #1A1A1A !important; font-family: 'Helvetica Neue', sans-serif; font-weight: 800; text-align: center; }
+    
+    /* Botões Pretos com contorno Dourado */
+    div.stButton > button:first-child {
+        background-color: #1A1A1A;
+        color: #D4AF37; 
+        border: 2px solid #D4AF37;
+        padding: 12px 30px;
+        font-size: 16px;
+        font-weight: 700;
+        border-radius: 4px;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #D4AF37;
+        color: #1A1A1A;
+        border: 2px solid #1A1A1A;
+    }
 
-    /* Efeito de Chuva de Ouro */
+    /* Chuva de Ouro Discreta e Elegante */
     .gold-rain {
-        position: fixed; top: -50px; width: 25px; height: 25px;
-        background: radial-gradient(circle, #fff700 0%, #b8860b 100%);
-        border-radius: 50%; box-shadow: 0 0 10px #ffd700;
+        position: fixed; top: -50px; width: 15px; height: 15px;
+        background: radial-gradient(circle, #FFD700 0%, #B8860B 100%);
+        border-radius: 50%; opacity: 0.6;
         z-index: 9999; pointer-events: none;
         animation: fall linear forwards;
     }
-
-    @keyframes fall {
-        to { transform: translateY(110vh) rotate(360deg); }
-    }
+    @keyframes fall { to { transform: translateY(110vh) rotate(360deg); } }
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #5d4037; font-size: 1.2rem;'>A arte de minerar arquivos e descobrir tesouros fiscais.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #666; font-style: italic;'>Refinando processos, entregando resultados.</p>", unsafe_allow_html=True)
 
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
-# --- SIDEBAR ---
+# --- SIDEBAR (ONYX & GOLD) ---
 with st.sidebar:
-    st.markdown("### ✨ Perfil da Mina")
-    raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00")
+    st.markdown("### ✨ Identificação")
+    raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="Digite os números")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
     if raw_cnpj:
-        st.markdown(f"**Identificado:** `{format_cnpj(raw_cnpj)}`")
+        st.markdown(f"**Identificado:** \n`{format_cnpj(raw_cnpj)}`")
     
     st.divider()
-    if st.button("🗑️ Abandonar Jazida"):
+    if st.button("Resetar Jazida"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
-    st.caption("v7.5 | Gold Rush Edition")
+    st.caption("v7.7 | Onyx & Gold Edition")
 
-# --- ÁREA DE UPLOAD ---
+# --- TRABALHO ---
 if len(cnpj_limpo) < 14:
-    st.warning("⚠️ **Atenção:** Identifique o CNPJ da mina no menu lateral para liberar o maquinário.")
+    st.info("👋 Por favor, informe o CNPJ completo no menu lateral para liberar o acesso.")
 else:
-    st.markdown(f"### 🏺 Escavação: {format_cnpj(raw_cnpj)}")
-    uploaded_files = st.file_uploader("Solte aqui o material bruto (XML ou ZIP):", accept_multiple_files=True)
+    st.markdown(f"### 🏺 Seleção de Arquivos: {format_cnpj(raw_cnpj)}")
+    uploaded_files = st.file_uploader("Arraste aqui seus arquivos XML ou ZIP:", accept_multiple_files=True)
 
     if uploaded_files:
-        if st.button("🚀 INICIAR GRANDE GARIMPO", use_container_width=True):
+        if st.button("Iniciar Garimpo", use_container_width=True):
             processed_keys, sequencias, relatorio_lista = set(), {}, []
             zip_buffer = io.BytesIO()
             
-            with st.status("💎 Lavando o cascalho e separando o ouro...", expanded=True) as status:
+            with st.status("⛏️ Processando camadas...", expanded=True) as status:
                 prog_bar = st.progress(0)
                 total = len(uploaded_files)
                 
@@ -186,18 +201,15 @@ else:
                                 faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
                     st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
                 
-                status.update(label="💰 Tesouro encontrado!", state="complete", expanded=False)
+                status.update(label="✅ Garimpo finalizado!", state="complete", expanded=False)
 
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
-                
-                # SCRIPT PARA CHUVA DE OURO
+                # Chuva de Ouro sutil
                 gold_script = ""
-                for i in range(50):
-                    left = i * 2
-                    delay = i * 0.1
-                    size = 15 + (i % 15)
-                    gold_script += f'<div class="gold-rain" style="left:{left}%; width:{size}px; height:{size}px; animation-duration:{2+delay%2}s; animation-delay:{delay}s;"></div>'
+                for i in range(30):
+                    left, delay, size = i * 3, i * 0.15, 10 + (i % 10)
+                    gold_script += f'<div class="gold-rain" style="left:{left}%; width:{size}px; height:{size}px; animation-duration:{2.5+delay%2}s; animation-delay:{delay}s;"></div>'
                 st.markdown(gold_script, unsafe_allow_html=True)
 
 # --- RESULTADOS ---
@@ -205,21 +217,24 @@ if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
     
-    col_m1, col_m2, col_m3 = st.columns(3)
-    col_m1.metric("📦 Volume Extraído", f"{len(df_res)} itens")
-    col_m2.metric("✨ Ouro Puro (Emitidas)", f"{len(df_res[df_res['Pasta'].str.contains('EMITIDOS')])}")
-    col_m3.metric("🕳️ Falhas na Escavação", f"{len(st.session_state['df_faltantes']) if st.session_state['df_faltantes'] is not None else 0}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📦 Total de Itens", f"{len(df_res)}")
+    emitidas_count = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
+    c2.metric("💎 Notas do Cliente", f"{emitidas_count}")
+    buracos_count = len(st.session_state['df_faltantes']) if st.session_state['df_faltantes'] is not None else 0
+    c3.metric("⚠️ Notas Faltantes", f"{buracos_count}")
 
-    c_v1, c_v2 = st.columns(2)
-    with c_v1:
-        st.markdown("#### 📂 Estrutura de Armazenamento")
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        st.markdown("#### 📂 Estrutura de Pastas")
         st.dataframe(df_res['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}), use_container_width=True, hide_index=True)
-    with c_v2:
+    with col_v2:
         st.markdown("#### ⚠️ Buracos no Sequencial")
-        if st.session_state['df_faltantes'] is not None:
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+        df_f = st.session_state.get('df_faltantes')
+        if df_f is not None and not df_f.empty:
+            st.dataframe(df_f, use_container_width=True, hide_index=True)
         else:
-            st.success("Mina 100% íntegra. Sem falhas de sequência!")
+            st.info("Nenhuma nota faltando.")
 
     st.divider()
-    st.download_button("📥 RECOLHER TODO O TESOURO (.ZIP)", st.session_state['zip_completo'], "garimpo_gold_rush.zip", use_container_width=True)
+    st.download_button("Baixar ZIP Organizado", st.session_state['zip_completo'], "garimpo_v7_7.zip", use_container_width=True)
