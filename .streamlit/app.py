@@ -2,12 +2,11 @@ import streamlit as st
 import zipfile
 import io
 import os
-import xml.etree.ElementTree as ET
 import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -82,7 +81,7 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN PREMIUM E BLINDAGEM AGRESSIVA ---
+# --- DESIGN E BLINDAGEM ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
@@ -90,35 +89,29 @@ st.markdown("""
     #MainMenu {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     header {visibility: hidden !important;}
-    .stDeployButton, .stAppDeployButton { display: none !important; visibility: hidden !important; }
     .stApp { background-color: #f7f3f0; }
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #EADBC8 0%, #D2B48C 100%) !important; border-right: 3px solid #b8860b; }
     [data-testid="stSidebar"] * { color: #2b1e16 !important; font-weight: 800 !important; }
-    [data-testid="stSidebar"] div.stButton > button { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 100%) !important; color: #2b1e16 !important; border: 2px solid #8a6d3b !important; font-weight: 900 !important; }
     h1, h2, h3, h4, p, label, .stMetric label { color: #2b1e16 !important; font-family: 'Playfair Display', serif; font-weight: 800 !important; }
     h1 { font-size: 3.5rem !important; text-shadow: 2px 2px 0px #fff; }
-    [data-testid="stMetric"] { background: linear-gradient(135deg, #ffffff 0%, #fff9e6 100%); border: 2px solid #d4af37; border-radius: 20px; padding: 25px; box-shadow: 8px 8px 20px rgba(0,0,0,0.12); }
-    [data-testid="stMetricValue"] { color: #a67c00 !important; font-weight: 900 !important; font-size: 2.5rem !important; }
     
-    /* ESTILO DOS BOTÕES DE DOWNLOAD */
-    div.stDownloadButton > button {
+    /* BOTÃO DE DOWNLOAD ESTILIZADO */
+    .stDownloadButton > button {
         background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important;
         color: #2b1e16 !important;
-        border: 2px solid #8a6d3b !important;
-        padding: 20px 10px !important;
-        font-size: 18px !important;
+        border: 3px solid #8a6d3b !important;
+        padding: 25px !important;
         font-weight: 900 !important;
+        font-size: 20px !important;
         border-radius: 15px !important;
         width: 100% !important;
-        text-transform: uppercase !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3) !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# INICIALIZAÇÃO DE ESTADO
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
@@ -141,6 +134,7 @@ with st.sidebar:
 if not st.session_state['confirmado']:
     st.info("💰 Para iniciar, identifique o CNPJ no menu lateral e clique em **LIBERAR OPERAÇÃO**.")
 else:
+    # SE O GARIMPO AINDA NÃO FOI FEITO, MOSTRA O UPLOADER
     if not st.session_state['garimpo_ok']:
         st.markdown(f"### 📦 JAZIDA DE ARQUIVOS: {format_cnpj(raw_cnpj)}")
         uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
@@ -149,7 +143,7 @@ else:
             if st.button("🚀 INICIAR GRANDE GARIMPO"):
                 processed_keys, sequencias, relatorio_lista = set(), {}, []
                 
-                # ZIP ORGANIZADO
+                # 1. ZIP ORGANIZADO
                 buf_org = io.BytesIO()
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_DEFLATED) as zf:
                     for f in uploaded_files:
@@ -169,59 +163,48 @@ else:
                                         if s_key not in sequencias: sequencias[s_key] = set()
                                         sequencias[s_key].add(resumo["Número"])
                 
-                # ZIP TODOS (PASTA TODOS/)
+                # 2. ZIP TODOS COM PASTA INTERNA
                 buf_todos = io.BytesIO()
                 with zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_DEFLATED) as zf_t:
                     for item in relatorio_lista:
                         zf_t.writestr(f"TODOS/{item['Arquivo']}", item['Conteúdo'])
 
                 # SALVAR NO ESTADO
-                st.session_state.update({
-                    'zip_org': buf_org.getvalue(),
-                    'zip_todos': buf_todos.getvalue(),
-                    'relatorio': relatorio_lista,
-                    'garimpo_ok': True
-                })
+                st.session_state['zip_download_org'] = buf_org.getvalue()
+                st.session_state['zip_download_todos'] = buf_todos.getvalue()
+                st.session_state['relatorio_final'] = relatorio_lista
+                st.session_state['garimpo_ok'] = True
                 st.rerun()
-
     else:
-        # --- EXIBIÇÃO DOS RESULTADOS (SÓ APARECE DEPOIS DO GARIMPO) ---
-        st.success("✅ Mineração concluída com sucesso!")
+        # --- EXIBIÇÃO DOS BOTÕES (FOCO TOTAL AQUI AGORA) ---
+        st.success("💰 MINERAÇÃO FINALIZADA!")
         
-        df_res = pd.DataFrame(st.session_state['relatorio'])
-        c1, c2 = st.columns(2)
-        c1.metric("📦 TOTAL DE XMLs", len(df_res))
-        c2.metric("✨ NOTAS DO CLIENTE", len(df_res[df_res['Pasta'].str.contains("EMITIDOS")]))
-
-        st.divider()
-        st.markdown("### 📥 ESCOLHA SEU TESOURO")
+        st.markdown("## 📥 BAIXAR RESULTADOS")
         
-        # OS DOIS BOTÕES LADO A LADO
-        col_down1, col_down2 = st.columns(2)
+        # COLUNAS PARA OS BOTÕES
+        col_esq, col_dir = st.columns(2)
         
-        with col_down1:
-            st.markdown("**📂 MODELO ORGANIZADO**")
-            st.caption("Arquivos separados por pastas (Emitidas/Recebidas)")
+        with col_esq:
+            st.markdown("### 📦 OPÇÃO 1")
             st.download_button(
-                label="📥 BAIXAR GARIMPO FINAL",
-                data=st.session_state['zip_org'],
-                file_name="garimpo_final.zip",
-                mime="application/zip",
-                use_container_width=True
-            )
-
-        with col_down2:
-            st.markdown("**📦 MODELO TODOS**")
-            st.caption("Tudo dentro de uma única pasta chamada 'TODOS'")
-            st.download_button(
-                label="📥 BAIXAR TODOS",
-                data=st.session_state['zip_todos'],
+                label="📥 BAIXAR TODOS (PASTA ÚNICA)",
+                data=st.session_state['zip_download_todos'],
                 file_name="TODOS.zip",
-                mime="application/zip",
-                use_container_width=True
+                mime="application/zip"
             )
+            st.caption("Contém uma pasta chamada 'TODOS' com todos os XMLs misturados.")
+
+        with col_dir:
+            st.markdown("### 📂 OPÇÃO 2")
+            st.download_button(
+                label="📥 BAIXAR GARIMPO FINAL (ORGANIZADO)",
+                data=st.session_state['zip_download_org'],
+                file_name="garimpo_final.zip",
+                mime="application/zip"
+            )
+            st.caption("Organizado por pastas (Emitidas, Recebidas, etc).")
 
         st.divider()
-        if st.button("⛏️ NOVO GARIMPO"):
+        if st.button("⛏️ FAZER NOVO GARIMPO"):
             st.session_state['garimpo_ok'] = False
             st.rerun()
