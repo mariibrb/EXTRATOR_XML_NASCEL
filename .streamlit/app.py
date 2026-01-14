@@ -8,7 +8,6 @@ import pandas as pd
 
 # --- FUNÇÕES DE IDENTIFICAÇÃO ---
 def get_xml_key(root, content_str):
-    """Extrai a chave de acesso (44 dígitos) do XML."""
     try:
         ch_tag = root.find(".//chNFe") or root.find(".//chCTe") or root.find(".//chMDFe")
         if ch_tag is not None and ch_tag.text: return ch_tag.text
@@ -20,17 +19,18 @@ def get_xml_key(root, content_str):
                 if len(key) == 44: return key
         found = re.findall(r'\d{44}', content_str)
         if found: return found[0]
-    except:
-        pass
+    except: pass
     return None
 
 def identify_xml_info(content_bytes, client_cnpj):
     client_cnpj = "".join(filter(str.isdigit, client_cnpj))
     try:
         content_str = content_bytes.decode('utf-8', errors='ignore')
-        clean_content = content_str
-        for ns in ["nfe", "cte", "mdfe"]:
-            clean_content = clean_content.replace(f'xmlns="http://www.portalfiscal.inf.br/{ns}"', '')
+        # Limpeza leve de strings para economizar memória
+        clean_content = content_str.replace('xmlns="http://www.portalfiscal.inf.br/nfe"', '')
+        clean_content = clean_content.replace('xmlns="http://www.portalfiscal.inf.br/cte"', '')
+        clean_content = clean_content.replace('xmlns="http://www.portalfiscal.inf.br/mdfe"', '')
+        
         root = ET.fromstring(clean_content)
         
         doc_type = "Outros"
@@ -53,32 +53,26 @@ def identify_xml_info(content_bytes, client_cnpj):
         chave = get_xml_key(root, content_str)
         is_propria = (client_cnpj and emit_cnpj == client_cnpj)
         
-        if is_propria:
-            pasta_final = f"EMITIDOS_CLIENTE/{doc_type}/Serie_{serie}"
-        else:
-            pasta_final = f"RECEBIDOS_TERCEIROS/{doc_type}"
-            
+        pasta_final = f"EMITIDOS_CLIENTE/{doc_type}/Serie_{serie}" if is_propria else f"RECEBIDOS_TERCEIROS/{doc_type}"
         return pasta_final, chave, is_propria, serie, numero
     except:
         return "NAO_IDENTIFICADOS", None, False, "0", None
 
 def add_to_dict(filepath, content, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias):
-    simple_name = os.path.basename(filepath)
-    if not simple_name or not simple_name.lower().endswith('.xml'): return
+    if not filepath.lower().endswith('.xml'): return
     
     subfolder, chave, is_propria, serie, numero = identify_xml_info(content, client_cnpj)
     
     if chave:
         if chave in processed_keys: return
         processed_keys.add(chave)
-        simple_name = f"{chave}.xml"
+        name_to_save = f"{subfolder}/{chave}.xml"
         
         if is_propria and numero:
             if serie not in sequencias_proprias: sequencias_proprias[serie] = set()
             sequencias_proprias[serie].add(numero)
-
-    full_path_in_zip = f"{subfolder}/{simple_name}"
-    xml_files_dict[full_path_in_zip] = content
+        
+        xml_files_dict[name_to_save] = content
 
 def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias):
     if file_name.lower().endswith('.zip'):
@@ -86,25 +80,22 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
             with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
                 for info in z.infolist():
                     if info.is_dir(): continue
-                    content = z.read(info.filename)
-                    process_recursively(info.filename, content, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias)
+                    process_recursively(info.filename, z.read(info.filename), xml_files_dict, client_cnpj, processed_keys, sequencias_proprias)
         except: pass
     elif file_name.lower().endswith('.xml'):
         add_to_dict(file_name, file_bytes, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias)
 
 # --- INTERFACE ---
-st.set_page_config(page_title="Garimpeiro de XML v3.2", page_icon="⛏️", layout="wide")
-
+st.set_page_config(page_title="Garimpeiro v3.4", page_icon="⛏️", layout="wide")
 st.title("⛏️ Garimpeiro de XML 💎")
 
 with st.sidebar:
     st.header("⚙️ Configurações")
-    cnpj_input = st.text_input("CNPJ do Cliente (Apenas números)", placeholder="Ex: 12345678000199")
+    cnpj_input = st.text_input("CNPJ do Cliente (Só números)", placeholder="Ex: 12345678000199")
     st.divider()
-    st.write("v3.2 - Estabilidade Máxima")
+    st.info("v3.4 - Versão Ultra Estável")
 
-st.markdown("### 📥 1. Carregar Arquivos")
-uploaded_files = st.file_uploader("Solte a pasta ou arquivos aqui", accept_multiple_files=True, label_visibility="collapsed")
+uploaded_files = st.file_uploader("Solte a pasta ou arquivos aqui", accept_multiple_files=True)
 
 if uploaded_files:
     total = len(uploaded_files)
@@ -113,28 +104,62 @@ if uploaded_files:
         processed_keys = set()
         sequencias_proprias = {}
 
-        # Interface de progresso total
         progress_container = st.container(border=True)
         with progress_container:
-            st.write("### 📈 Progresso da Mineração")
+            st.write("### 📈 Progresso Total")
             barra_geral = st.progress(0)
             c1, c2, c3 = st.columns(3)
-            metrica_perc = c1.empty()
-            metrica_qtd = c2.empty()
-            metrica_rest = c3.empty()
-            txt_file = st.empty()
+            m_perc = c1.empty()
+            m_qtd = c2.empty()
+            m_rest = c3.empty()
 
         for i, file in enumerate(uploaded_files):
             process_recursively(file.name, file.read(), all_xml_data, cnpj_input, processed_keys, sequencias_proprias)
             prog = (i + 1) / total
             barra_geral.progress(prog)
-            metrica_perc.metric("Status", f"{int(prog * 100)}%")
-            metrica_qtd.metric("Processados", f"{i+1} de {total}")
-            metrica_rest.metric("Faltam", total - (i+1))
-            txt_file.caption(f"⛏️ Lendo: {file.name}")
+            m_perc.metric("Status", f"{int(prog * 100)}%")
+            m_qtd.metric("Lidos", f"{i+1} de {total}")
+            m_rest.metric("Faltam", total - (i+1))
 
-        txt_file.empty()
-        
         if all_xml_data:
-            st.balloons()
-            st.success(f"✨ Garimpo Finalizado!
+            st.success(f"✨ Concluído! {len(all_xml_data)} XMLs únicos encontrados.")
+            
+            # 1. INVENTÁRIO (TABELA DETALHADA)
+            st.write("### 📊 Inventário do Tesouro")
+            resumo = {}
+            for path in all_xml_data.keys():
+                cat = " - ".join(path.split('/')[:-1]).replace('_', ' ')
+                resumo[cat] = resumo.get(cat, 0) + 1
+            st.table(pd.DataFrame(list(resumo.items()), columns=['Categoria', 'Quantidade']))
+
+            # 2. RELATÓRIO DE FALTANTES
+            st.divider()
+            st.write("### ⚠️ Notas de Emissão Própria Faltantes")
+            faltantes_list = []
+            for serie, numeros in sequencias_proprias.items():
+                if numeros:
+                    seq_ideal = set(range(min(numeros), max(numeros) + 1))
+                    for f in sorted(list(seq_ideal - numeros)):
+                        faltantes_list.append({"Série": serie, "Número Faltante": f})
+            
+            if faltantes_list:
+                df_f = pd.DataFrame(faltantes_list)
+                st.dataframe(df_f, use_container_width=True)
+                csv_f = df_f.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Baixar Lista de Faltantes (CSV)", csv_f, "faltantes.csv")
+            else:
+                st.info("✅ Nenhuma quebra de sequência detectada.")
+
+            # GERADOR DE ZIP OTIMIZADO
+            zip_out = io.BytesIO()
+            with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path, data in all_xml_data.items():
+                    zf.writestr(path, data)
+                if faltantes_list:
+                    zf.writestr("RELATORIOS/faltantes.csv", pd.DataFrame(faltantes_list).to_csv(index=False))
+            
+            st.download_button("📥 BAIXAR TUDO ORGANIZADO (.ZIP)", zip_out.getvalue(), "garimpo_v3_4.zip", use_container_width=True)
+            
+            # Limpa memória explicitamente
+            del all_xml_data
+            del processed_keys
