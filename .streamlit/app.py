@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import gc
 
-# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO 100%) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -82,122 +82,125 @@ def process_zip_recursively(file_bytes, zf_output, processed_keys, sequencias, r
                                 sequencias[s_key].add(resumo["Número"])
     except: pass
 
-# --- ESTILO PROFISSIONAL REFINADO ---
-st.set_page_config(page_title="Garimpeiro XML", layout="wide", page_icon="⛏️")
+def format_cnpj(cnpj):
+    cnpj = "".join(filter(str.isdigit, cnpj))
+    if len(cnpj) > 14: cnpj = cnpj[:14]
+    if len(cnpj) <= 2: return cnpj
+    if len(cnpj) <= 5: return f"{cnpj[:2]}.{cnpj[2:]}"
+    if len(cnpj) <= 8: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:]}"
+    if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
+    return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
+
+# --- DESIGN LÚDICO & SOFISTICADO ---
+st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    .stButton>button {
-        background-color: #2c3e50;
-        color: white;
-        border-radius: 8px;
-        padding: 0.5rem 2rem;
-        border: none;
+    .stApp { background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%); }
+    h1 { color: #5d4037 !important; font-family: 'Playfair Display', serif; font-weight: 800; text-align: center; }
+    div.stButton > button:first-child {
+        background: linear-gradient(to right, #8e5e02, #d4af37);
+        color: white; border: none; padding: 15px 40px; font-size: 18px; font-weight: bold; border-radius: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease;
     }
-    .stButton>button:hover {
-        background-color: #34495e;
-        color: #d4af37;
-        border: 1px solid #d4af37;
-    }
-    [data-testid="stMetricValue"] {
-        color: #2c3e50;
-    }
+    div.stButton > button:first-child:hover { transform: scale(1.02); box-shadow: 0 6px 20px rgba(0,0,0,0.3); border: 1px solid white; }
+    [data-testid="stMetric"] { background-color: rgba(255, 255, 255, 0.6); padding: 15px; border-radius: 15px; border: 1px solid rgba(212, 175, 55, 0.3); }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CABEÇALHO ---
-st.title("⛏️ O Garimpeiro")
-st.markdown("Organização inteligente de documentos fiscais.")
+st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #8d6e63; font-style: italic;'>Transformando montanhas de arquivos em ouro organizado.</p>", unsafe_allow_html=True)
 
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
-# --- SIDEBAR ---
+# --- SIDEBAR COM MÁSCARA ---
 with st.sidebar:
-    st.markdown("### ⚙️ Configuração")
-    cnpj_input = st.text_input("CNPJ do Cliente", placeholder="Apenas números")
+    st.markdown("### ✨ Identificação")
+    raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00", help="Digite apenas os números")
+    formatted_cnpj = format_cnpj(raw_cnpj)
+    if raw_cnpj:
+        st.markdown(f"**CNPJ Formatado:** `{formatted_cnpj}`")
+    
     st.divider()
-    if st.button("🗑️ Resetar Sistema"):
+    if st.button("🗑️ Resetar Jazida"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- UPLOAD ---
-st.markdown("### 📂 Seleção de Arquivos")
-uploaded_files = st.file_uploader("Suba seus XMLs ou arquivos ZIP aqui:", accept_multiple_files=True)
+# --- ÁREA DE TRABALHO TRAVADA ---
+cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
 
-if uploaded_files:
-    if st.button("🚀 INICIAR PROCESSAMENTO", use_container_width=True):
-        processed_keys, sequencias, relatorio_lista = set(), {}, []
-        zip_buffer = io.BytesIO()
-        
-        with st.status("🔍 Processando e separando arquivos...", expanded=True) as status:
-            prog_bar = st.progress(0)
-            total = len(uploaded_files)
+if len(cnpj_limpo) < 14:
+    st.info("👋 Para começar, informe o **CNPJ completo (14 dígitos)** do seu cliente ali no menu lateral.")
+else:
+    with st.container():
+        st.markdown(f"### 🏺 Depósito de Arquivos - Cliente: {formatted_cnpj}")
+        uploaded_files = st.file_uploader("Arraste aqui seus arquivos XML ou ZIP:", accept_multiple_files=True)
+
+    if uploaded_files:
+        if st.button("🌟 INICIAR GARIMPO", use_container_width=True):
+            processed_keys, sequencias, relatorio_lista = set(), {}, []
+            zip_buffer = io.BytesIO()
             
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
-                for i, file in enumerate(uploaded_files):
-                    f_bytes = file.read()
-                    if file.name.lower().endswith('.zip'):
-                        process_zip_recursively(f_bytes, zf_final, processed_keys, sequencias, relatorio_lista, cnpj_input)
-                    elif file.name.lower().endswith('.xml'):
-                        resumo, is_p = identify_xml_info(f_bytes, cnpj_input, file.name)
-                        ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
-                        if ident not in processed_keys:
-                            processed_keys.add(ident)
-                            zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
-                            relatorio_lista.append(resumo)
-                            if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
-                                doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
-                                s_key = (doc_base, resumo["Série"])
-                                if s_key not in sequencias: sequencias[s_key] = set()
-                                sequencias[s_key].add(resumo["Número"])
-                    prog_bar.progress((i + 1) / total)
+            with st.status("💎 Minerando e organizando...", expanded=True) as status:
+                prog_bar = st.progress(0)
+                total = len(uploaded_files)
                 
-                # Faltantes
-                faltantes_lista = []
-                for (t, s), nums in sequencias.items():
-                    if nums:
-                        ideal = set(range(min(nums), max(nums) + 1))
-                        for b in sorted(list(ideal - nums)):
-                            faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
-                st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
-            
-            status.update(label="✅ Processamento finalizado!", state="complete", expanded=False)
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
+                    for i, file in enumerate(uploaded_files):
+                        f_bytes = file.read()
+                        if file.name.lower().endswith('.zip'):
+                            process_zip_recursively(f_bytes, zf_final, processed_keys, sequencias, relatorio_lista, cnpj_limpo)
+                        elif file.name.lower().endswith('.xml'):
+                            resumo, is_p = identify_xml_info(f_bytes, cnpj_limpo, file.name)
+                            ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
+                            if ident not in processed_keys:
+                                processed_keys.add(ident)
+                                zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
+                                relatorio_lista.append(resumo)
+                                if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
+                                    doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
+                                    s_key = (doc_base, resumo["Série"])
+                                    if s_key not in sequencias: sequencias[s_key] = set()
+                                    sequencias[s_key].add(resumo["Número"])
+                        prog_bar.progress((i + 1) / total)
+                    
+                    faltantes_lista = []
+                    for (t, s), nums in sequencias.items():
+                        if nums:
+                            ideal = set(range(min(nums), max(nums) + 1))
+                            for b in sorted(list(ideal - nums)):
+                                faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
+                    st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
+                
+                status.update(label="✨ Garimpo finalizado!", state="complete", expanded=False)
 
-        if relatorio_lista:
-            st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
+            if relatorio_lista:
+                st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
+                st.balloons()
 
 # --- RESULTADOS ---
 if st.session_state.get('garimpo_ok'):
     st.divider()
     df_resumo = pd.DataFrame(st.session_state['relatorio'])
     
-    # Métricas Claras
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total de Arquivos", f"{len(df_resumo)}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("📁 Total Minerado", f"{len(df_resumo)}")
     emitidas_count = len(df_resumo[df_resumo['Pasta'].str.contains("EMITIDOS")])
-    m2.metric("Notas do Cliente", f"{emitidas_count}")
+    c2.metric("💎 Notas do Cliente", f"{emitidas_count}")
     buracos_count = len(st.session_state['df_faltantes']) if st.session_state['df_faltantes'] is not None else 0
-    m3.metric("Notas Faltantes", f"{buracos_count}")
+    c3.metric("⚠️ Buracos", f"{buracos_count}")
 
-    col_res1, col_res2 = st.columns(2)
-    with col_res1:
-        st.markdown("### 📂 Resumo por Pasta")
-        st.dataframe(df_resumo['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}), 
-                     use_container_width=True, hide_index=True)
-    
-    with col_res2:
-        st.markdown("### ⚠️ Relatório de Faltantes")
+    st.markdown("---")
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        st.markdown("#### 📂 Estrutura de Pastas")
+        st.dataframe(df_resumo['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}), use_container_width=True, hide_index=True)
+    with col_v2:
+        st.markdown("#### ⚠️ Números Faltantes (Buracos)")
         df_f = st.session_state.get('df_faltantes')
         if df_f is not None and not df_f.empty:
             st.dataframe(df_f, use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhuma nota faltando na sequência.")
+            st.info("Nenhuma falha de sequência detectada.")
 
     st.divider()
-    st.markdown("### 📥 Download do Resultado")
-    st.download_button(
-        label="📥 BAIXAR ZIP COMPLETO ORGANIZADO",
-        data=st.session_state['zip_completo'],
-        file_name="garimpeiro_resultado.zip",
-        use_container_width=True
-    )
+    st.download_button("📥 BAIXAR RESULTADO COMPLETO (.ZIP)", st.session_state['zip_completo'], "garimpo_v7_3.zip", use_container_width=True)
