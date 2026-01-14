@@ -182,7 +182,7 @@ with st.sidebar:
 if not st.session_state['confirmado']:
     st.info("💰 Para iniciar, identifique o CNPJ no menu lateral e clique em **LIBERAR OPERAÇÃO**.")
 else:
-    st.markdown(f"### 📦 JAZIDA DE ARQUIVOS: {format_cnpj(raw_cnpj)}")
+    st.markdown(f"### 📦 ARQUIVOS: {format_cnpj(raw_cnpj)}")
     uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
 
     if uploaded_files:
