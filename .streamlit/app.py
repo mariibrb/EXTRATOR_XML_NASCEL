@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import gc
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO 100%) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -75,7 +75,6 @@ def process_zip_recursively(file_bytes, zf_output, processed_keys, sequencias, r
                         zf_output.writestr(f"{resumo['Pasta']}/{info.filename}", content)
                         relatorio_lista.append(resumo)
                         if is_p and resumo["Número"] > 0:
-                            # SEPARAÇÃO CRÍTICA: Inutilização não entra no mapa de sequências para auditoria de buracos
                             if resumo["Tipo"] != "Inutilizacoes":
                                 doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
                                 s_key = (doc_base, resumo["Série"])
@@ -83,82 +82,122 @@ def process_zip_recursively(file_bytes, zf_output, processed_keys, sequencias, r
                                 sequencias[s_key].add(resumo["Número"])
     except: pass
 
-# --- INTERFACE ---
-st.set_page_config(page_title="Garimpeiro v6.3", layout="wide", page_icon="⛏️")
-st.title("⛏️ Garimpeiro v6.3 - Auditoria sem Inutilizados")
+# --- ESTILO PROFISSIONAL REFINADO ---
+st.set_page_config(page_title="Garimpeiro XML", layout="wide", page_icon="⛏️")
+
+st.markdown("""
+    <style>
+    .stButton>button {
+        background-color: #2c3e50;
+        color: white;
+        border-radius: 8px;
+        padding: 0.5rem 2rem;
+        border: none;
+    }
+    .stButton>button:hover {
+        background-color: #34495e;
+        color: #d4af37;
+        border: 1px solid #d4af37;
+    }
+    [data-testid="stMetricValue"] {
+        color: #2c3e50;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- CABEÇALHO ---
+st.title("⛏️ O Garimpeiro")
+st.markdown("Organização inteligente de documentos fiscais.")
 
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
-if 'df_faltantes' not in st.session_state: st.session_state['df_faltantes'] = None
 
+# --- SIDEBAR ---
 with st.sidebar:
-    cnpj_input = st.text_input("CNPJ do Cliente (SÓ NÚMEROS)", placeholder="Ex: 12345678000199")
-    if st.button("🗑️ Resetar Tudo"):
+    st.markdown("### ⚙️ Configuração")
+    cnpj_input = st.text_input("CNPJ do Cliente", placeholder="Apenas números")
+    st.divider()
+    if st.button("🗑️ Resetar Sistema"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-uploaded_files = st.file_uploader("Suba seus arquivos (XML ou ZIP)", accept_multiple_files=True)
+# --- UPLOAD ---
+st.markdown("### 📂 Seleção de Arquivos")
+uploaded_files = st.file_uploader("Suba seus XMLs ou arquivos ZIP aqui:", accept_multiple_files=True)
 
 if uploaded_files:
-    if st.button("🚀 INICIAR GARIMPO", use_container_width=True):
+    if st.button("🚀 INICIAR PROCESSAMENTO", use_container_width=True):
         processed_keys, sequencias, relatorio_lista = set(), {}, []
         zip_buffer = io.BytesIO()
-        prog_bar = st.progress(0)
-        status_text = st.empty()
         
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
-            for i, file in enumerate(uploaded_files):
-                f_bytes = file.read()
-                if file.name.lower().endswith('.zip'):
-                    process_zip_recursively(f_bytes, zf_final, processed_keys, sequencias, relatorio_lista, cnpj_input)
-                elif file.name.lower().endswith('.xml'):
-                    resumo, is_p = identify_xml_info(f_bytes, cnpj_input, file.name)
-                    ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
-                    if ident not in processed_keys:
-                        processed_keys.add(ident)
-                        zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
-                        relatorio_lista.append(resumo)
-                        if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
-                            doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
-                            s_key = (doc_base, resumo["Série"])
-                            if s_key not in sequencias: sequencias[s_key] = set()
-                            sequencias[s_key].add(resumo["Número"])
-                
-                prog_bar.progress((i + 1) / len(uploaded_files))
-                status_text.info(f"⛏️ Minerando... {len(processed_keys)} arquivos.")
-                gc.collect()
-
-            # --- AUDITORIA DE BURACOS (Apenas Notas de Venda) ---
-            faltantes_lista = []
-            for (t, s), nums in sequencias.items():
-                if nums:
-                    ideal = set(range(min(nums), max(nums) + 1))
-                    buracos = sorted(list(ideal - nums))
-                    for b in buracos:
-                        faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
+        with st.status("🔍 Processando e separando arquivos...", expanded=True) as status:
+            prog_bar = st.progress(0)
+            total = len(uploaded_files)
             
-            st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf_final:
+                for i, file in enumerate(uploaded_files):
+                    f_bytes = file.read()
+                    if file.name.lower().endswith('.zip'):
+                        process_zip_recursively(f_bytes, zf_final, processed_keys, sequencias, relatorio_lista, cnpj_input)
+                    elif file.name.lower().endswith('.xml'):
+                        resumo, is_p = identify_xml_info(f_bytes, cnpj_input, file.name)
+                        ident = resumo["Chave"] if len(resumo["Chave"]) == 44 else file.name
+                        if ident not in processed_keys:
+                            processed_keys.add(ident)
+                            zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
+                            relatorio_lista.append(resumo)
+                            if is_p and resumo["Número"] > 0 and resumo["Tipo"] != "Inutilizacoes":
+                                doc_base = "NFC-e" if "NFC-e" in resumo["Pasta"] else ("NF-e" if "NF-e" in resumo["Pasta"] else resumo["Tipo"])
+                                s_key = (doc_base, resumo["Série"])
+                                if s_key not in sequencias: sequencias[s_key] = set()
+                                sequencias[s_key].add(resumo["Número"])
+                    prog_bar.progress((i + 1) / total)
+                
+                # Faltantes
+                faltantes_lista = []
+                for (t, s), nums in sequencias.items():
+                    if nums:
+                        ideal = set(range(min(nums), max(nums) + 1))
+                        for b in sorted(list(ideal - nums)):
+                            faltantes_lista.append({"Tipo": t, "Série": s, "Nº Faltante": b})
+                st.session_state['df_faltantes'] = pd.DataFrame(faltantes_lista) if faltantes_lista else None
+            
+            status.update(label="✅ Processamento finalizado!", state="complete", expanded=False)
 
         if relatorio_lista:
             st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
-            status_text.success("✅ Concluído! Inutilizações ignoradas no relatório de buracos.")
 
+# --- RESULTADOS ---
 if st.session_state.get('garimpo_ok'):
-    df = pd.DataFrame(st.session_state['relatorio'])
     st.divider()
+    df_resumo = pd.DataFrame(st.session_state['relatorio'])
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 📂 Resumo de Arquivos")
-        st.table(df['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}))
+    # Métricas Claras
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total de Arquivos", f"{len(df_resumo)}")
+    emitidas_count = len(df_resumo[df_resumo['Pasta'].str.contains("EMITIDOS")])
+    m2.metric("Notas do Cliente", f"{emitidas_count}")
+    buracos_count = len(st.session_state['df_faltantes']) if st.session_state['df_faltantes'] is not None else 0
+    m3.metric("Notas Faltantes", f"{buracos_count}")
+
+    col_res1, col_res2 = st.columns(2)
+    with col_res1:
+        st.markdown("### 📂 Resumo por Pasta")
+        st.dataframe(df_resumo['Pasta'].value_counts().reset_index().rename(columns={'Pasta': 'Caminho', 'count': 'Qtd'}), 
+                     use_container_width=True, hide_index=True)
     
-    with col2:
-        st.write("### ⚠️ Buracos (Apenas NF-e/NFC-e)")
+    with col_res2:
+        st.markdown("### ⚠️ Relatório de Faltantes")
         df_f = st.session_state.get('df_faltantes')
         if df_f is not None and not df_f.empty:
-            st.warning(f"Existem {len(df_f)} notas de venda faltando.")
-            st.dataframe(df_f, use_container_width=True)
+            st.dataframe(df_f, use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhuma nota de venda faltando na sequência.")
+            st.info("Nenhuma nota faltando na sequência.")
 
     st.divider()
-    st.download_button("📥 BAIXAR ZIP COMPLETO", st.session_state['zip_completo'], "garimpo_v6_3.zip", use_container_width=True)
+    st.markdown("### 📥 Download do Resultado")
+    st.download_button(
+        label="📥 BAIXAR ZIP COMPLETO ORGANIZADO",
+        data=st.session_state['zip_completo'],
+        file_name="garimpeiro_resultado.zip",
+        use_container_width=True
+    )
