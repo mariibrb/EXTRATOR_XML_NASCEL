@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO 100%) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -82,60 +82,56 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- CSS FIEL À IMAGEM ---
+# --- CSS CLONE DA IMAGEM ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Fundo em degradê Champagne Suave */
+    /* Degradê de fundo Champagne idêntico à imagem */
     .stApp {
         background: linear-gradient(180deg, #FFFFFF 0%, #E2D1C3 100%);
     }
     
-    /* Sidebar exatamente como na imagem */
+    /* Sidebar com o mesmo degradê e bordas finas */
     [data-testid="stSidebar"] {
-        background-color: #FDFCFB;
-        border-right: 1px solid #E2D1C3;
+        background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%);
+        border-right: 1px solid #C4A484;
     }
     
-    /* Título Marrom Escuro Profundo (Café) */
-    h1 {
-        color: #5D4037 !important;
+    /* Títulos e textos em Marrom Café Profundo */
+    h1, h2, h3, p, label, .stMetric label, [data-testid="stMarkdownContainer"] p {
+        color: #3D2B1F !important;
         font-family: 'Playfair Display', serif;
-        font-weight: 800;
-        text-align: center;
-        letter-spacing: 1px;
     }
 
-    /* Estilo das Métricas (Cards Arredondados) */
+    /* Cards de Métricas arredondados e com brilho */
     [data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.4);
+        background-color: rgba(255, 255, 255, 0.45);
         border: 1px solid #D4AF37;
         border-radius: 20px;
-        padding: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 15px rgba(184, 134, 11, 0.1);
     }
 
-    /* O Botão Dourado Incrível da Imagem */
-    div.stButton > button:first-child {
+    /* O Botão Dourado Incrível da Foto */
+    div.stButton > button {
         background: linear-gradient(180deg, #F9D976 0%, #D4AF37 100%);
         color: #3D2B1F !important;
         border: 1px solid #B8860B;
-        padding: 18px 60px;
-        font-size: 22px;
+        padding: 15px 40px;
+        font-size: 18px;
         font-weight: bold;
-        border-radius: 40px;
-        box-shadow: 0 6px 15px rgba(184, 134, 11, 0.3);
+        border-radius: 35px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         width: 100%;
-        transition: 0.3s ease all;
+        transition: 0.3s ease;
     }
     
-    div.stButton > button:first-child:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(184, 134, 11, 0.5);
+    div.stButton > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 20px rgba(184, 134, 11, 0.4);
     }
 
-    /* Efeito de Chuva de Ouro Aleatória */
+    /* Chuva de Ouro Dinâmica e Espaçada */
     .gold-particle {
         position: fixed;
         background: radial-gradient(circle, #FFD700 0%, #B8860B 100%);
@@ -152,22 +148,20 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CABEÇALHO ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #8D6E63; font-style: italic; font-size: 1.1rem;'>Transformando montanhas de arquivos em ouro organizado.</p>", unsafe_allow_html=True)
 
-if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
+if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 
-# --- SIDEBAR ---
+# --- SIDEBAR DOURADA ---
 with st.sidebar:
-    st.markdown("<h3 style='color: #5D4037;'>⭐ Identificação</h3>", unsafe_allow_html=True)
+    st.markdown("### ⭐ Identificação")
     raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
     
     if len(cnpj_limpo) == 14:
-        st.markdown(f"<p style='color: #5D4037;'><b>Identificado:</b> {format_cnpj(raw_cnpj)}</p>", unsafe_allow_html=True)
-        if st.button("✅ CONFIRMAR"):
+        st.markdown(f"**Cliente Selecionado:**\n{format_cnpj(raw_cnpj)}")
+        if st.button("✅ CONFIRMAR CLIENTE"):
             st.session_state['confirmado'] = True
             st.rerun()
     
@@ -176,11 +170,12 @@ with st.sidebar:
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- ÁREA DE TRABALHO ---
+# --- FLUXO DE TRABALHO ---
 if not st.session_state['confirmado']:
-    st.info("👋 Digite o CNPJ completo no menu lateral e clique em **CONFIRMAR** para começar.")
+    st.info("👋 Digite o CNPJ completo no menu lateral e clique em **CONFIRMAR CLIENTE** para abrir a mina.")
 else:
-    st.markdown(f"<h3 style='color: #5D4037;'>🏺 Depósito de Arquivos - {format_cnpj(raw_cnpj)}</h3>", unsafe_allow_html=True)
+    # TROCAMOS O JARRO POR PICARETAS OU CAIXAS
+    st.markdown(f"### 📦 Depósito de Brutos: {format_cnpj(raw_cnpj)}")
     uploaded_files = st.file_uploader("Arraste aqui seus arquivos XML ou ZIP:", accept_multiple_files=True)
 
     if uploaded_files:
@@ -211,13 +206,13 @@ else:
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
                 
-                # CHUVA DE OURO ESPAÇADA
+                # CHUVA DE OURO REALISTA (ESPAÇADA)
                 rain_html = ""
-                for i in range(70):
+                for i in range(80):
                     left = random.randint(0, 98)
-                    delay = random.uniform(0, 1.5)
-                    size = random.randint(12, 25)
-                    rain_html += f'<div class="gold-particle" style="left:{left}%; top:-30px; width:{size}px; height:{size}px; animation-delay:{delay}s; animation-duration:{random.uniform(2, 4)}s;"></div>'
+                    delay = random.uniform(0, 2)
+                    size = random.randint(12, 28)
+                    rain_html += f'<div class="gold-particle" style="left:{left}%; top:-50px; width:{size}px; height:{size}px; animation-delay:{delay}s; animation-duration:{random.uniform(2, 4)}s;"></div>'
                 st.markdown(rain_html, unsafe_allow_html=True)
 
 # --- RESULTADOS ---
@@ -225,13 +220,14 @@ if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
     
-    m1, m2, m3 = st.columns(3)
-    m1.metric("📂 Total Minerado", f"{len(df_res)} itens")
-    emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
-    m2.metric("💎 Notas do Cliente", f"{emitidas}")
-    # Cálculo de faltantes (lógica preservada)
-    faltantes_count = 0 
-    # (Inserir aqui sua lógica de contagem de DF se desejar exibir no metric)
-    m3.metric("⚠️ Buracos", "Analisar abaixo")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📂 Volume Extraído", f"{len(df_res)} itens")
+    col2.metric("💎 Notas do Cliente", f"{len(df_res[df_res['Pasta'].str.contains('EMITIDOS')])}")
+    col3.metric("⚠️ Buracos", "Analisar abaixo")
 
-    st.download_button("📥 BAIXAR RESULTADO COMPLETO I .ZIP", st.session_state['zip_completo'], "garimpo_v8_6.zip", use_container_width=True)
+    st.download_button(
+        label="📥 BAIXAR RESULTADO COMPLETO I .ZIP",
+        data=st.session_state['zip_completo'],
+        file_name=f"garimpo_{cnpj_limpo}.zip",
+        use_container_width=True
+    )
