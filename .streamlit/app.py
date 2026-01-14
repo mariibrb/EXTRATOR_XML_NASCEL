@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -19,13 +19,11 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         content_str = content_bytes.decode('utf-8', errors='ignore')
         match_ch = re.search(r'\d{44}', content_str)
         resumo_nota["Chave"] = match_ch.group(0) if match_ch else ""
-        
         tag_lower = content_str.lower()
         d_type = "NF-e"
         if '<mod>65</mod>' in tag_lower: d_type = "NFC-e"
         elif '<infcte' in tag_lower: d_type = "CT-e"
         elif '<infmdfe' in tag_lower: d_type = "MDF-e"
-        
         status = "NORMAIS"
         if '<procevento' in tag_lower or '<revento' in tag_lower:
             status = "EVENTOS_CANCELAMENTOS"
@@ -34,27 +32,21 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         elif '<inutnfe' in tag_lower or '<procinut' in tag_lower:
             status = "INUTILIZADOS"
             d_type = "Inutilizacoes"
-
         resumo_nota["Tipo"] = d_type
         s_match = re.search(r'<(?:serie|serie)>(\d+)</?:serie|serie>', content_str)
         resumo_nota["Série"] = s_match.group(1) if s_match else "0"
-        
         n_match = re.search(r'<(?:nNF|nCT|nMDF|nNFIni)>(\d+)</(?:nNF|nCT|nMDF|nNFIni)>', content_str)
         resumo_nota["Número"] = int(n_match.group(1)) if n_match else 0
-        
         emit_match = re.search(r'<(?:emit|infInut|detEvento)>.*?<CNPJ>(\d+)</CNPJ>', content_str, re.DOTALL)
         resumo_nota["CNPJ_Emit"] = emit_match.group(1) if emit_match else ""
-
         is_p = False
         if client_cnpj_clean:
             if resumo_nota["CNPJ_Emit"] == client_cnpj_clean: is_p = True
             elif resumo_nota["Chave"] and client_cnpj_clean in resumo_nota["Chave"][6:20]: is_p = True
-
         if is_p:
             resumo_nota["Pasta"] = f"EMITIDOS_CLIENTE/{d_type}/{status}/Serie_{resumo_nota['Série']}"
         else:
             resumo_nota["Pasta"] = f"RECEBIDOS_TERCEIROS/{d_type}"
-            
         return resumo_nota, is_p
     except:
         return resumo_nota, False
@@ -90,17 +82,27 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN PREMIUM REFINADO E BLINDAGEM ---
+# --- DESIGN PREMIUM REFINADO E BLINDAGEM RADICAL ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* BLINDAGEM: Esconde Menu, Botão GitHub e Rodapé */
+    /* 1. BLINDAGEM RADICAL: ESCONDE TUDO MESMO */
     #MainMenu {visibility: hidden !important;}
     footer {visibility: hidden !important;}
     header {visibility: hidden !important;}
-    .stAppDeployButton {display:none !important;}
+    
+    /* Esconde especificamente o botão de Deploy/GitHub no canto superior */
+    .stAppDeployButton {
+        display: none !important;
+    }
+    
+    /* Remove o ícone do GitHub que aparece em apps públicos/privados */
+    .st-emotion-cache-zq5wmm, .st-emotion-cache-15ec60f, .st-emotion-cache-1ky8h65 {
+        display: none !important;
+    }
 
+    /* 2. DESIGN ESTÉTICO MANTIDO */
     .stApp { background-color: #f7f3f0; }
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #EADBC8 0%, #D2B48C 100%) !important;
@@ -197,11 +199,10 @@ else:
                 rain_html = "".join([f'<div class="gold-item" style="left:{random.randint(0,95)}%; animation-delay:{random.uniform(0,2.5)}s; font-size:{random.randint(25,45)}px;">{random.choice(icons)}</div>' for i in range(70)])
                 st.markdown(rain_html, unsafe_allow_html=True)
 
-# --- RESULTADOS E BUSCA ---
+# --- RESULTADOS ---
 if st.session_state.get('garimpo_ok'):
     st.divider()
     df_res = pd.DataFrame(st.session_state['relatorio'])
-    
     col1, col2, col3 = st.columns(3)
     col1.metric("📦 VOLUME MINERADO", f"{len(df_res)}")
     emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
@@ -210,22 +211,18 @@ if st.session_state.get('garimpo_ok'):
     col3.metric("⚠️ BURACOS NA MINA", f"{len(df_f) if df_f is not None else 0}")
 
     st.markdown("### 🔍 Peneira de Notas (Busca Individual)")
-    busca = st.text_input("Digite o Número da Nota ou a Chave para baixar:", placeholder="Ex: 1234")
-    
+    busca = st.text_input("Digite o Número da Nota ou a Chave:", placeholder="Ex: 1234")
     if busca:
         filtro = df_res[df_res['Número'].astype(str).str.contains(busca) | df_res['Chave'].str.contains(busca)]
         if not filtro.empty:
             for _, row in filtro.iterrows():
                 st.download_button(f"📥 Baixar XML: {row['Tipo']} - Nº {row['Número']}", row['Conteúdo'], file_name=row['Arquivo'])
-        else:
-            st.warning("Nenhuma pepita encontrada com esse número.")
+        else: st.warning("Nenhuma pepita encontrada.")
 
     st.markdown("---")
     st.markdown("### ⚠️ RELATÓRIO DE NOTAS FALTANTES")
-    if df_f is not None and not df_f.empty:
-        st.dataframe(df_f, use_container_width=True, hide_index=True)
-    else:
-        st.success("Mina íntegra! Sequência completa.")
+    if df_f is not None and not df_f.empty: st.dataframe(df_f, use_container_width=True, hide_index=True)
+    else: st.success("Mina íntegra! Sequência completa.")
 
     st.divider()
     st.download_button("📥 BAIXAR TESOURO COMPLETO (.ZIP)", st.session_state['zip_completo'], "garimpo_final.zip", use_container_width=True)
