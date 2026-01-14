@@ -104,7 +104,7 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
 
 # --- INTERFACE ---
 
-st.set_page_config(page_title="Garimpeiro de XML v2.2", page_icon="⛏️", layout="wide")
+st.set_page_config(page_title="Garimpeiro de XML v2.3", page_icon="⛏️", layout="wide")
 
 st.title("⛏️ Garimpeiro de XML 💎")
 
@@ -113,52 +113,58 @@ with st.sidebar:
     st.header("⚙️ Painel de Controle")
     cnpj_input = st.text_input("CNPJ do Cliente (apenas números)", placeholder="Ex: 12345678000199")
     st.divider()
-    st.info("🛡️ Filtro Anti-Duplicidade Ativa")
+    st.info("🛡️ Anti-Duplicidade Ativa")
     st.info("📊 Separação por Série Ativa")
 
 # Container Principal
-st.markdown("### 📥 Carregamento")
+st.markdown("### 📥 Carregamento de Arquivos")
 uploaded_files = st.file_uploader(
-    "Arraste sua pasta ou selecione os arquivos (Ctrl+A)", 
+    "Selecione todos os arquivos da pasta (Ctrl+A) ou arraste aqui", 
     accept_multiple_files=True
 )
 
 if uploaded_files:
+    total_files = len(uploaded_files)
+    st.write(f"📂 **{total_files}** itens prontos para o garimpo.")
+
     if st.button("⛏️ INICIAR GARIMPO TOTAL", use_container_width=True):
         all_xml_data = {}
         processed_keys = set()
         
-        total_files = len(uploaded_files)
+        # --- ÁREA DE PROGRESSO GERAL (FIXA NO TOPO) ---
+        placeholder_progresso = st.container()
         
-        # --- ÁREA DE PROGRESSO GERAL ---
-        st.divider()
-        st.markdown("### 📊 Progresso Geral do Garimpo")
-        overall_bar = st.progress(0)
-        col_status1, col_status2 = st.columns(2)
-        status_perc = col_status1.empty()
-        status_count = col_status2.empty()
-        
-        current_file_text = st.empty() # Mostra o arquivo atual em miniatura abaixo
-        
+        with placeholder_progresso:
+            st.markdown("## 📊 STATUS GERAL")
+            barra_geral = st.progress(0)
+            col_info1, col_info2, col_info3 = st.columns(3)
+            metrica_perc = col_info1.empty()
+            metrica_count = col_info2.empty()
+            metrica_univos = col_info3.empty()
+            arquivo_atual = st.empty()
+            st.divider()
+
+        # Loop de processamento
         for i, file in enumerate(uploaded_files):
-            # Processamento
+            # Processa o arquivo
             process_recursively(file.name, file.read(), all_xml_data, cnpj_input, processed_keys)
             
-            # Atualização da Barra Geral
-            percent = (i + 1) / total_files
-            overall_bar.progress(percent)
+            # Atualiza indicadores
+            progresso_atual = (i + 1) / total_files
+            barra_geral.progress(progresso_atual)
             
-            # Atualização dos Indicadores
-            status_perc.metric("Concluído", f"{int(percent * 100)}%")
-            status_count.metric("Arquivos Lidos", f"{i+1} de {total_files}")
-            current_file_text.caption(f"⛏️ Minerando agora: {file.name}")
+            # Atualiza as métricas em tempo real
+            metrica_perc.metric("Progresso", f"{int(progresso_atual * 100)}%")
+            metrica_count.metric("Lidos", f"{i+1} de {total_files}")
+            metrica_univos.metric("XMLs Únicos", len(all_xml_data))
+            arquivo_atual.caption(f"⛏️ Minerando: {file.name}")
 
-        # Limpeza e Sucesso
-        current_file_text.empty()
+        # Finalização
+        arquivo_atual.empty()
         st.balloons()
-        st.success(f"✨ Garimpo Finalizado! {len(all_xml_data)} XMLs únicos organizados.")
+        st.success(f"✨ Garimpo Finalizado! {len(all_xml_data)} XMLs únicos encontrados.")
         
-        # Criar ZIP
+        # Gerar ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for path, data in all_xml_data.items():
@@ -183,4 +189,4 @@ if uploaded_files:
         )
 
 st.divider()
-st.caption("FoxHelper: Sistema de extração recursiva e triagem por série.")
+st.caption("FoxHelper: Barra de progresso global ativada.")
