@@ -8,16 +8,20 @@ import pandas as pd
 
 # --- FUNÇÕES DE IDENTIFICAÇÃO ---
 def get_xml_key(root, content_str):
-    ch_tag = root.find(".//chNFe") or root.find(".//chCTe") or root.find(".//chMDFe")
-    if ch_tag is not None and ch_tag.text: return ch_tag.text
-    inf_tags = [".//infNFe", ".//infCTe", ".//infMDFe", ".//infProc"]
-    for tag in inf_tags:
-        element = root.find(tag)
-        if element is not None and 'Id' in element.attrib:
-            key = re.sub(r'\D', '', element.attrib['Id'])
-            if len(key) == 44: return key
-    found = re.findall(r'\d{44}', content_str)
-    if found: return found[0]
+    """Extrai a chave de acesso (44 dígitos) do XML."""
+    try:
+        ch_tag = root.find(".//chNFe") or root.find(".//chCTe") or root.find(".//chMDFe")
+        if ch_tag is not None and ch_tag.text: return ch_tag.text
+        inf_tags = [".//infNFe", ".//infCTe", ".//infMDFe", ".//infProc"]
+        for tag in inf_tags:
+            element = root.find(tag)
+            if element is not None and 'Id' in element.attrib:
+                key = re.sub(r'\D', '', element.attrib['Id'])
+                if len(key) == 44: return key
+        found = re.findall(r'\d{44}', content_str)
+        if found: return found[0]
+    except:
+        pass
     return None
 
 def identify_xml_info(content_bytes, client_cnpj):
@@ -74,13 +78,7 @@ def add_to_dict(filepath, content, xml_files_dict, client_cnpj, processed_keys, 
             sequencias_proprias[serie].add(numero)
 
     full_path_in_zip = f"{subfolder}/{simple_name}"
-    name_to_save = full_path_in_zip
-    counter = 1
-    while name_to_save in xml_files_dict:
-        name_part, ext_part = os.path.splitext(simple_name)
-        name_to_save = f"{subfolder}/{name_part}_{counter}{ext_part}"
-        counter += 1
-    xml_files_dict[name_to_save] = content
+    xml_files_dict[full_path_in_zip] = content
 
 def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias):
     if file_name.lower().endswith('.zip'):
@@ -95,7 +93,7 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
         add_to_dict(file_name, file_bytes, xml_files_dict, client_cnpj, processed_keys, sequencias_proprias)
 
 # --- INTERFACE ---
-st.set_page_config(page_title="Garimpeiro de XML v3.1", page_icon="⛏️", layout="wide")
+st.set_page_config(page_title="Garimpeiro de XML v3.2", page_icon="⛏️", layout="wide")
 
 st.title("⛏️ Garimpeiro de XML 💎")
 
@@ -103,26 +101,22 @@ with st.sidebar:
     st.header("⚙️ Configurações")
     cnpj_input = st.text_input("CNPJ do Cliente (Apenas números)", placeholder="Ex: 12345678000199")
     st.divider()
-    st.info("📊 Inventário Completo + Relatório de Faltantes")
+    st.write("v3.2 - Estabilidade Máxima")
 
 st.markdown("### 📥 1. Carregar Arquivos")
-status_upload = st.empty()
-
 uploaded_files = st.file_uploader("Solte a pasta ou arquivos aqui", accept_multiple_files=True, label_visibility="collapsed")
 
 if uploaded_files:
     total = len(uploaded_files)
-    status_upload.warning(f"⏳ Aguardando leitura de {total} itens pelo navegador...")
-
     if st.button("🚀 INICIAR GARIMPO COMPLETO", use_container_width=True):
-        status_upload.empty()
         all_xml_data = {}
         processed_keys = set()
         sequencias_proprias = {}
 
         # Interface de progresso total
-        with st.container(border=True):
-            st.write("### 📈 Progresso Total da Mineração")
+        progress_container = st.container(border=True)
+        with progress_container:
+            st.write("### 📈 Progresso da Mineração")
             barra_geral = st.progress(0)
             c1, c2, c3 = st.columns(3)
             metrica_perc = c1.empty()
@@ -140,60 +134,7 @@ if uploaded_files:
             txt_file.caption(f"⛏️ Lendo: {file.name}")
 
         txt_file.empty()
-        st.balloons()
-
-        # --- EXIBIÇÃO DOS RESULTADOS ---
-        st.success(f"✨ Garimpo Finalizado! {len(all_xml_data)} XMLs únicos organizados.")
         
-        # 1. Tabela Detalhada (O que foi encontrado)
-        st.write("### 📊 Inventário do Tesouro (Tudo o que foi encontrado)")
-        resumo = {}
-        for path in all_xml_data.keys():
-            # Limpa o nome da pasta para exibição
-            cat = " - ".join(path.split('/')[:-1]).replace('_', ' ')
-            resumo[cat] = resumo.get(cat, 0) + 1
-        
-        # Transforma o dicionário em uma lista bonita para a tabela
-        df_resumo = pd.DataFrame(list(resumo.items()), columns=['Categoria / Série', 'Quantidade'])
-        st.table(df_resumo)
-
-        # 2. Relatório de Faltantes
-        st.divider()
-        st.write("### ⚠️ Notas de Emissão Própria Faltantes (Buracos na Sequência)")
-        faltantes_data = []
-        if sequencias_proprias:
-            for serie, numeros in sequencias_proprias.items():
-                if numeros:
-                    min_n = min(numeros)
-                    max_n = max(numeros)
-                    sequencia_completa = set(range(min_n, max_n + 1))
-                    faltantes = sorted(list(sequencia_completa - numeros))
-                    for f in faltantes:
-                        faltantes_data.append({"Série": serie, "Número Faltante": f})
-        
-        if faltantes_data:
-            df_faltantes = pd.DataFrame(faltantes_data)
-            st.dataframe(df_faltantes, use_container_width=True)
-            csv_faltantes = df_faltantes.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Baixar Lista de Faltantes (CSV)", csv_faltantes, "faltantes.csv", "text/csv")
-        else:
-            st.info("✅ Nenhuma quebra de sequência detectada nas notas do cliente.")
-
-        # Gerar ZIP Final
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for path, data in all_xml_data.items():
-                zf.writestr(path, data)
-            if faltantes_data:
-                zf.writestr("RELATORIOS/notas_faltantes.csv", pd.DataFrame(faltantes_data).to_csv(index=False))
-
-        st.download_button(
-            label="📥 BAIXAR TUDO ORGANIZADO (.ZIP)",
-            data=zip_buffer.getvalue(),
-            file_name="garimpo_completo.zip",
-            mime="application/zip",
-            use_container_width=True
-        )
-
-st.divider()
-st.caption("FoxHelper v3.1: O Garimpeiro que não esquece nada.")
+        if all_xml_data:
+            st.balloons()
+            st.success(f"✨ Garimpo Finalizado!
