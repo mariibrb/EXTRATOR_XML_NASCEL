@@ -7,7 +7,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (PRESERVADO) ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     resumo_nota = {
@@ -74,11 +74,14 @@ def process_zip_recursively(file_bytes, zf_output, processed_keys, sequencias, r
                         processed_keys.add(ident)
                         zf_output.writestr(f"{resumo['Pasta']}/{info.filename}", content)
                         relatorio_lista.append(resumo)
-                        # REGISTRA SEQUÊNCIA APENAS PARA EMITIDOS REAIS (NÃO INUTILIZADOS/EVENTOS)
-                        if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"] and "Inutilizacoes" not in resumo["Tipo"]:
-                            s_key = (resumo["Tipo"], resumo["Série"])
-                            if s_key not in sequencias: sequencias[s_key] = set()
-                            sequencias[s_key].add(resumo["Número"])
+                        
+                        # CAPTURA DE SEQUENCIAL (BURACOS)
+                        if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
+                            # Consideramos apenas notas fiscais reais, ignorando eventos/inutilizações para a quebra de sequência
+                            if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
+                                s_key = (resumo["Tipo"], resumo["Série"])
+                                if s_key not in sequencias: sequencias[s_key] = set()
+                                sequencias[s_key].add(resumo["Número"])
     except: pass
 
 def format_cnpj(cnpj):
@@ -95,49 +98,18 @@ st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
-    /* Degradê Champagne Suave */
-    .stApp {
-        background: linear-gradient(180deg, #FFFFFF 0%, #E2D1C3 100%);
-    }
-    
-    /* Sidebar Integrada */
-    [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
-        background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%) !important;
-    }
-    
-    /* Textos em Marrom Café Profundo (Onyx) */
-    h1, h2, h3, p, label, .stMetric label, [data-testid="stMetricValue"] {
-        color: #3D2B1F !important;
-        font-family: 'Playfair Display', serif;
-    }
-
-    /* Botões Dourados com Design Limpo */
+    .stApp { background: linear-gradient(180deg, #FFFFFF 0%, #E2D1C3 100%); }
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: linear-gradient(180deg, #FFFFFF 0%, #D2B48C 100%) !important; }
+    h1, h2, h3, h4, p, label, .stMetric label, [data-testid="stMetricValue"] { color: #3D2B1F !important; font-family: 'Playfair Display', serif; }
     div.stButton > button {
         background: linear-gradient(180deg, #F9D976 0%, #D4AF37 100%);
-        color: #3D2B1F !important;
-        border: 1px solid #B8860B;
-        padding: 12px 30px;
-        font-size: 18px;
-        font-weight: bold;
-        border-radius: 30px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        width: 100%;
-        transition: 0.3s;
+        color: #3D2B1F !important; border: 1px solid #B8860B;
+        padding: 12px 30px; font-size: 18px; font-weight: bold; border-radius: 30px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; transition: 0.3s;
     }
-    div.stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 15px rgba(184, 134, 11, 0.3);
-    }
-
-    /* Chuva de Ouro Aleatória e Espaçada */
-    .gold-item {
-        position: fixed; top: -50px; z-index: 9999;
-        pointer-events: none; animation: drop 3s linear forwards;
-    }
-    @keyframes drop {
-        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
-    }
+    div.stButton > button:hover { transform: scale(1.02); box-shadow: 0 6px 15px rgba(184, 134, 11, 0.3); }
+    .gold-item { position: fixed; top: -50px; z-index: 9999; pointer-events: none; animation: drop 3s linear forwards; }
+    @keyframes drop { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
     </style>
     """, unsafe_allow_html=True)
 
@@ -151,13 +123,11 @@ with st.sidebar:
     st.markdown("### ⭐ Identificação")
     raw_cnpj = st.text_input("CNPJ do Cliente", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
-    
     if len(cnpj_limpo) == 14:
         st.markdown(f"**Identificado:** `{format_cnpj(raw_cnpj)}`")
         if st.button("✅ CONFIRMAR CLIENTE"):
             st.session_state['cnpj_confirmado'] = True
             st.rerun()
-    
     st.divider()
     if st.button("🗑️ Resetar Jazida"):
         for key in list(st.session_state.keys()): del st.session_state[key]
@@ -188,17 +158,17 @@ else:
                                 processed_keys.add(ident)
                                 zf_final.writestr(f"{resumo['Pasta']}/{file.name}", f_bytes)
                                 relatorio_lista.append(resumo)
-                                # LÓGICA DE SEQUENCIAL
                                 if is_p and resumo["Número"] > 0 and "EMITIDOS" in resumo["Pasta"]:
-                                    s_key = (resumo["Tipo"], resumo["Série"])
-                                    if s_key not in sequencias: sequencias[s_key] = set()
-                                    sequencias[s_key].add(resumo["Número"])
+                                    if resumo["Tipo"] in ["NF-e", "NFC-e", "CT-e", "MDF-e"]:
+                                        s_key = (resumo["Tipo"], resumo["Série"])
+                                        if s_key not in sequencias: sequencias[s_key] = set()
+                                        sequencias[s_key].add(resumo["Número"])
                 
-                # CÁLCULO DE BURACOS
+                # --- CÁLCULO DE BURACOS (CORREÇÃO) ---
                 faltantes_data = []
                 for (tipo, serie), numeros in sequencias.items():
-                    if numeros:
-                        ideal = set(range(min(numeros), max(nums := max(numeros)) + 1))
+                    if len(numeros) > 1:
+                        ideal = set(range(min(numeros), max(numeros) + 1))
                         buracos = sorted(list(ideal - numeros))
                         for b in buracos:
                             faltantes_data.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
@@ -208,12 +178,9 @@ else:
 
             if relatorio_lista:
                 st.session_state.update({'relatorio': relatorio_lista, 'zip_completo': zip_buffer.getvalue(), 'garimpo_ok': True})
-                # CHUVA DE OURO ESPAÇADA
+                # CHUVA DE OURO
                 icons = ["💰", "🪙", "💎", "🥇", "✨"]
-                rain_html = ""
-                for i in range(70):
-                    left, delay, icon = random.randint(0, 98), random.uniform(0, 2), random.choice(icons)
-                    rain_html += f'<div class="gold-item" style="left:{left}%; top:-50px; animation-delay:{delay}s; animation-duration:{random.uniform(2,4)}s;">{icon}</div>'
+                rain_html = "".join([f'<div class="gold-item" style="left:{random.randint(0,95)}%; animation-delay:{random.uniform(0,2)}s;">{random.choice(icons)}</div>' for i in range(60)])
                 st.markdown(rain_html, unsafe_allow_html=True)
 
 # --- RESULTADOS ---
@@ -222,7 +189,7 @@ if st.session_state.get('garimpo_ok'):
     df_res = pd.DataFrame(st.session_state['relatorio'])
     
     c1, c2, c3 = st.columns(3)
-    c1.metric("📦 Total Extraído", f"{len(df_res)} itens")
+    c1.metric("📦 Total Extraído", f"{len(df_res)}")
     emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
     c2.metric("💎 Notas do Cliente", f"{emitidas}")
     
