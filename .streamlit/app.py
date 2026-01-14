@@ -4,6 +4,7 @@ import io
 import os
 import xml.etree.ElementTree as ET
 import re
+import time
 
 def get_xml_key(root, content_str):
     """Extrai a chave de acesso (44 dígitos) do XML."""
@@ -86,7 +87,7 @@ def process_recursively(file_name, file_bytes, xml_files_dict, client_cnpj, proc
 
 # --- INTERFACE ---
 
-st.set_page_config(page_title="Garimpeiro de XML v2.6", page_icon="⛏️", layout="wide")
+st.set_page_config(page_title="Garimpeiro de XML v2.8", page_icon="⛏️", layout="wide")
 
 st.title("⛏️ Garimpeiro de XML 💎")
 
@@ -97,69 +98,96 @@ with st.sidebar:
     st.info("🛡️ Anti-Duplicidade Ativa")
     st.info("📊 Separação por Série Ativa")
 
-# --- ÁREA DE CARREGAMENTO E STATUS ---
-st.markdown("### 📥 Passo 1: Carregar os arquivos")
+# Estilo visual
+st.markdown("""
+    <style>
+    .stProgress > div > div > div > div { background-image: linear-gradient(to right, #4CAF50 , #2E7D32); }
+    .upload-info { background-color: #e8f4f8; padding: 10px; border-radius: 5px; border-left: 5px solid #2196F3; }
+    </style>""", unsafe_allow_html=True)
+
+st.markdown("### 📥 Passo 1: Upload da Mina (Arquivos)")
+
+# ÁREA DE FEEDBACK DE CARREGAMENTO (Antes do botão)
+loading_placeholder = st.empty()
+
 uploaded_files = st.file_uploader(
-    "Arraste sua pasta ou arquivos aqui", 
+    "Arraste sua pasta ou selecione os arquivos (Ctrl+A)", 
     accept_multiple_files=True
 )
 
 if uploaded_files:
     total_files = len(uploaded_files)
-    st.info(f"📁 {total_files} itens prontos na fila. Clique no botão abaixo para iniciar o processamento.")
     
-    if st.button("🚀 INICIAR EXTRAÇÃO E VER PROGRESSO TOTAL", use_container_width=True):
+    # Exibe informações enquanto o Streamlit termina de "digerir" os arquivos
+    with loading_placeholder.container():
+        st.markdown(f"""
+        <div class="upload-info">
+            <b>📦 Carga Detectada:</b> {total_files} itens recebidos.<br>
+            <b>🦊 Dica:</b> Se a barra azul no topo da página parou de mexer, o botão abaixo será liberado!
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.write("") # Espaçador
+
+    if st.button("🚀 INICIAR GARIMPO AGORA", use_container_width=True):
         all_xml_data = {}
         processed_keys = set()
         
-        # Criando o painel de progresso fixo que vai aparecer LOGO ACIMA do resultado
+        # Central de Progresso Total (Travada)
+        st.markdown("---")
         with st.container(border=True):
-            st.markdown("## 📈 PROGRESSO TOTAL DO GARIMPO")
-            barra_total = st.progress(0)
-            col1, col2, col3 = st.columns(3)
-            p_metric = col1.empty()
-            c_metric = col2.empty()
-            u_metric = col3.empty()
-            txt_atual = st.empty()
+            st.markdown("## 📈 PROGRESSO TOTAL")
+            main_bar = st.progress(0)
+            c1, c2, c3 = st.columns(3)
+            m_perc = c1.empty()
+            m_cont = c2.empty()
+            m_rest = c3.empty()
+            txt_file = st.empty()
+            st.divider()
 
-        # Loop de processamento real
+        start_time = time.time()
+
         for i, file in enumerate(uploaded_files):
-            # Lógica de progresso
-            progresso_atual = (i + 1) / total_files
+            # Lógica de Progresso
+            prog = (i + 1) / total_files
+            perc = int(prog * 100)
             
-            # Atualiza visualmente a BARRA GERAL
-            barra_total.progress(progresso_atual)
-            p_metric.metric("Concluído", f"{int(progresso_atual * 100)}%")
-            c_metric.metric("Arquivos Lidos", f"{i+1} de {total_files}")
-            u_metric.metric("XMLs Únicos", len(all_xml_data))
-            txt_atual.caption(f"⛏️ Minerando: {file.name}")
+            # Atualiza Barra e Métricas
+            main_bar.progress(prog)
+            m_perc.metric("Concluído", f"{perc}%")
+            m_cont.metric("Processados", f"{i+1} / {total_files}")
+            m_rest.metric("Faltam", total_files - (i+1))
+            txt_file.caption(f"⛏️ Lendo: {file.name}")
             
-            # Lê o conteúdo e processa
+            # Processamento
             process_recursively(file.name, file.read(), all_xml_data, cnpj_input, processed_keys)
 
-        # Finalização
-        txt_atual.empty()
-        st.balloons()
-        st.success(f"✨ Garimpo Finalizado! {len(all_xml_data)} XMLs organizados.")
+        end_time = time.time()
         
-        # Gerar ZIP
+        # Resultado
+        txt_file.empty()
+        st.balloons()
+        st.success(f"✨ Garimpo Concluído em {int(end_time - start_time)} segundos!")
+        st.info(f"💎 Diamantes encontrados: {len(all_xml_data)} XMLs únicos.")
+        
+        # ZIP
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for path, data in all_xml_data.items():
                 zf.writestr(path, data)
         
-        # Resumo
+        # Tabela
         resumo = {}
         for path in all_xml_data.keys():
             partes = path.split('/')
             cat = " - ".join([p.replace('_', ' ') for p in partes[:-1]])
             resumo[cat] = resumo.get(cat, 0) + 1
         
-        st.write("### 💎 Resumo do Tesouro:")
+        st.write("### 💎 Resumo da Mineração:")
         st.table(resumo)
 
         st.download_button(
-            label="📥 BAIXAR ZIP FINAL",
+            label="📥 BAIXAR TUDO ORGANIZADO (.ZIP)",
             data=zip_buffer.getvalue(),
             file_name="garimpo_xml_final.zip",
             mime="application/zip",
@@ -167,4 +195,4 @@ if uploaded_files:
         )
 
 st.divider()
-st.caption("FoxHelper: Sistema com Barra de Progresso Unificada v2.6")
+st.caption("FoxHelper v2.8: Monitoramento de carga e progresso total.")
