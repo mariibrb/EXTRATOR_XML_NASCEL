@@ -3,63 +3,101 @@ import zipfile
 import io
 import os
 
-def extract_xml_recursive(zip_bytes, xml_files_dict):
+def extract_xml_recursive(data, xml_files_dict):
     """
-    Função recursiva que entra em ZIPs dentro de ZIPs em busca de XMLs.
+    Lê bytes de um arquivo. Se for um ZIP, abre e olha dentro.
+    Se encontrar outro ZIP dentro, mergulha recursivamente.
+    Se encontrar XML, salva no dicionário.
     """
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
-        for file_info in z.infolist():
-            # Se for um arquivo XML, salva no dicionário (evita duplicados pelo nome)
-            if file_info.filename.lower().endswith('.xml'):
-                # Pegamos apenas o nome do arquivo, ignorando o caminho da pasta interna
-                filename = os.path.basename(file_info.filename)
-                if filename:
-                    xml_files_dict[filename] = z.read(file_info.filename)
-            
-            # Se encontrar outro arquivo ZIP dentro, chama a função novamente
-            elif file_info.filename.lower().endswith('.zip'):
-                nested_zip_bytes = z.read(file_info.filename)
-                extract_xml_recursive(nested_zip_bytes, xml_files_dict)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for file_info in z.infolist():
+                # Ignora pastas vazias dentro do ZIP
+                if file_info.is_dir():
+                    continue
+                
+                filename = file_info.filename
+                # Se for um ZIP dentro do ZIP
+                if filename.lower().endswith('.zip'):
+                    nested_zip_bytes = z.read(filename)
+                    extract_xml_recursive(nested_zip_bytes, xml_files_dict)
+                
+                # Se for um XML dentro do ZIP
+                elif filename.lower().endswith('.xml'):
+                    content = z.read(filename)
+                    simple_name = os.path.basename(filename)
+                    if simple_name:
+                        # Se o nome já existir, anexa um contador para não sobrescrever
+                        base_name = simple_name
+                        counter = 1
+                        while simple_name in xml_files_dict:
+                            name_part, ext_part = os.path.splitext(base_name)
+                            simple_name = f"{name_part}_{counter}{ext_part}"
+                            counter += 1
+                        xml_files_dict[simple_name] = content
+    except zipfile.BadZipFile:
+        # Se não for um ZIP válido, apenas ignora
+        pass
 
 # Configuração da Página
-st.set_page_config(page_title="Extrator Recursivo de XML", page_icon="📦")
+st.set_page_config(page_title="Extrator Total XML", page_icon="⚡")
 
-st.title("📦 Extrator de XML (ZIP Recursivo)")
+st.title("⚡ Extrator Total de XML")
 st.markdown("""
-Esta ferramenta vasculha arquivos ZIP, inclusive aqueles que possuem **outros ZIPs dentro**, 
-localiza todos os arquivos `.xml` e gera um único arquivo para download.
+Arraste para cá:
+1. **Arquivos ZIP** (mesmo que tenham pastas ou outros ZIPs dentro).
+2. **Pastas inteiras** do seu computador.
+3. **Arquivos XML** avulsos.
 """)
 
-# Upload de múltiplos arquivos ZIP
-uploaded_files = st.file_uploader("Escolha seus arquivos ZIP", type="zip", accept_multiple_files=True)
+# Componente de Upload
+uploaded_files = st.file_uploader(
+    "Solte seus arquivos ou pastas aqui", 
+    accept_multiple_files=True
+)
 
 if uploaded_files:
-    if st.button("Processar e Extrair XMLs"):
-        all_xmls = {} # Dicionário para armazenar {nome_arquivo: conteudo_bytes}
+    if st.button("🚀 Extrair tudo para um único ZIP"):
+        all_xmls = {} # {nome_do_arquivo: conteudo_em_bytes}
         
-        with st.spinner("Mergulhando nos arquivos..."):
+        with st.spinner("Processando..."):
             for uploaded_file in uploaded_files:
                 file_bytes = uploaded_file.read()
-                extract_xml_recursive(file_bytes, all_xmls)
-        
+                fname = uploaded_file.name.lower()
+                
+                # Caso 1: O arquivo enviado é um ZIP
+                if fname.endswith('.zip'):
+                    extract_xml_recursive(file_bytes, all_xmls)
+                
+                # Caso 2: O arquivo enviado é um XML solto (ou veio de uma pasta arrastada)
+                elif fname.endswith('.xml'):
+                    simple_name = os.path.basename(uploaded_file.name)
+                    # Lógica para evitar nomes duplicados
+                    name_to_save = simple_name
+                    c = 1
+                    while name_to_save in all_xmls:
+                        n, e = os.path.splitext(simple_name)
+                        name_to_save = f"{n}_{c}{e}"
+                        c += 1
+                    all_xmls[name_to_save] = file_bytes
+
         if all_xmls:
-            st.success(f"Sucesso! Encontramos {len(all_xmls)} arquivos XML.")
+            st.success(f"Encontrados {len(all_xmls)} arquivos XML!")
             
-            # Criar o novo ZIP em memória
+            # Criar ZIP final
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as new_zip:
                 for name, content in all_xmls.items():
                     new_zip.writestr(name, content)
             
-            # Botão de Download
             st.download_button(
-                label="📥 Baixar ZIP Único com XMLs",
+                label="📥 Baixar ZIP com todos os XMLs",
                 data=zip_buffer.getvalue(),
-                file_name="todos_os_xmls.zip",
+                file_name="xmls_extraidos.zip",
                 mime="application/zip"
             )
         else:
-            st.warning("Nenhum arquivo XML foi encontrado nos ZIPs enviados.")
+            st.error("Nenhum XML encontrado nos arquivos fornecidos.")
 
 st.divider()
-st.caption("Desenvolvido para simplificar extrações complexas de arquivos fiscais ou de dados.")
+st.info("Dica: Ao arrastar uma pasta, o navegador enviará todos os arquivos contidos nela individualmente para o Streamlit.")
