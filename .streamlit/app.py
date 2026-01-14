@@ -165,7 +165,7 @@ if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("### 🏆 CONTROLE DA MINA")
+    st.markdown("### ⛏️ Painel de Extração")
     raw_cnpj = st.text_input("CNPJ DO CLIENTE", placeholder="Digite os números")
     cnpj_limpo = "".join(filter(str.isdigit, raw_cnpj))
     if len(cnpj_limpo) == 14:
