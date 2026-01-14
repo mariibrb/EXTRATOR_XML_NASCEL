@@ -90,11 +90,17 @@ def format_cnpj(cnpj):
     if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
-# --- DESIGN PREMIUM REFINADO ---
+# --- DESIGN PREMIUM REFINADO E BLINDAGEM ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 
 st.markdown("""
     <style>
+    /* BLINDAGEM: Esconde Menu, Botão GitHub e Rodapé */
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    .stAppDeployButton {display:none !important;}
+
     .stApp { background-color: #f7f3f0; }
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #EADBC8 0%, #D2B48C 100%) !important;
