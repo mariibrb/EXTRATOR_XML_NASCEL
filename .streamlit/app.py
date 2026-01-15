@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (INTEGRAL) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -15,8 +15,13 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         "Número": 0, "Pasta": "RECEBIDOS_TERCEIROS/OUTROS"
     }
     try:
-        # Analisamos apenas o cabeçalho para ser veloz
+        # Analisamos o cabeçalho
         content_str = content_bytes[:8192].decode('utf-8', errors='ignore')
+        
+        # FILTRO CRÍTICO: Se não tiver a tag de abertura de XML, descartamos
+        if '<?xml' not in content_str and '<inf' not in content_str:
+            return None, False
+
         match_ch = re.search(r'\d{44}', content_str)
         resumo["Chave"] = match_ch.group(0) if match_ch else ""
         tag_l = content_str.lower()
@@ -44,9 +49,9 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo}/{status}/Serie_{resumo['Série']}" if is_p else f"RECEBIDOS_TERCEIROS/{tipo}"
         return resumo, is_p
     except:
-        return resumo, False
+        return None, False
 
-# --- DESIGN LUXO ---
+# --- DESIGN PREMIUM ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 st.markdown("""
     <style>
@@ -62,7 +67,6 @@ st.markdown("""
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# Inicialização segura
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 
@@ -86,7 +90,7 @@ if st.session_state['confirmado']:
             keys, rel, seq = set(), [], {}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando jazidas paralelas...", expanded=True) as status:
+            with st.status("⛏️ Minerando apenas XMLs legítimos...", expanded=True) as status:
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
@@ -96,28 +100,29 @@ if st.session_state['confirmado']:
                         if f.name.lower().endswith('.zip'):
                             with zipfile.ZipFile(io.BytesIO(f_bytes)) as z_in:
                                 for name in z_in.namelist():
+                                    # SÓ ACEITA SE FOR .XML
                                     if name.lower().endswith('.xml'):
                                         temp.append((os.path.basename(name), z_in.read(name)))
-                        else:
+                        elif f.name.lower().endswith('.xml'):
                             temp.append((os.path.basename(f.name), f_bytes))
 
                         for name, xml_data in temp:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
-                            k = res["Chave"] if res["Chave"] else name
-                            if k not in keys:
-                                keys.add(k)
-                                # ZIP 1: Organizado
-                                z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
-                                # ZIP 2: Todos soltos
-                                z_todos.writestr(name, xml_data)
-                                rel.append(res)
-                                if is_p and res["Número"] > 0:
-                                    sk = (res["Tipo"], res["Série"])
-                                    if sk not in seq: seq[sk] = set()
-                                    seq[sk].add(res["Número"])
+                            
+                            # Só processa se o motor confirmou que é um XML válido
+                            if res:
+                                k = res["Chave"] if res["Chave"] else name
+                                if k not in keys:
+                                    keys.add(k)
+                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
+                                    z_todos.writestr(name, xml_data)
+                                    rel.append(res)
+                                    if is_p and res["Número"] > 0:
+                                        sk = (res["Tipo"], res["Série"])
+                                        if sk not in seq: seq[sk] = set()
+                                        seq[sk].add(res["Número"])
                         del temp
 
-            # Buracos
             faltantes = []
             for (t, s), nums in seq.items():
                 if len(nums) > 1:
@@ -134,8 +139,7 @@ if st.session_state['confirmado']:
             })
             st.rerun()
     else:
-        # EXIBIÇÃO SEGURA DOS RESULTADOS
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state.get('relatorio', []))} arquivos processados.")
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state.get('relatorio', []))} XMLs encontrados.")
         
         c1, c2, c3 = st.columns(3)
         if 'relatorio' in st.session_state:
@@ -149,18 +153,13 @@ if st.session_state['confirmado']:
         st.markdown("### 📥 ESCOLHA SUA EXTRAÇÃO")
         col1, col2 = st.columns(2)
         
-        # Só mostra o botão se a chave existir no session_state para evitar o KeyError
         with col1:
             if 'zip_org' in st.session_state:
                 st.download_button("📂 BAIXAR ORGANIZADO (POR PASTAS)", st.session_state['zip_org'], "garimpo_pastas.zip", use_container_width=True)
-            else:
-                st.error("Erro ao carregar ZIP organizado. Tente resetar.")
 
         with col2:
             if 'zip_todos' in st.session_state:
                 st.download_button("📦 BAIXAR TODOS (SÓ XML SOLTO)", st.session_state['zip_todos'], "todos_xml.zip", use_container_width=True)
-            else:
-                st.error("Erro ao carregar ZIP de XMLs soltos.")
 
         st.divider()
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
