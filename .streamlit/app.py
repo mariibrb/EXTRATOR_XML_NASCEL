@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (INTEGRAL) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -15,6 +15,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         "Número": 0, "Pasta": "RECEBIDOS_TERCEIROS/OUTROS"
     }
     try:
+        # Analisamos apenas o cabeçalho para ser veloz
         content_str = content_bytes[:8192].decode('utf-8', errors='ignore')
         match_ch = re.search(r'\d{44}', content_str)
         resumo["Chave"] = match_ch.group(0) if match_ch else ""
@@ -45,7 +46,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
     except:
         return resumo, False
 
-# --- DESIGN PREMIUM ---
+# --- DESIGN LUXO ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 st.markdown("""
     <style>
@@ -61,6 +62,7 @@ st.markdown("""
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
+# Inicialização segura
 if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
 if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
 
@@ -79,43 +81,43 @@ with st.sidebar:
 
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
-        files = st.file_uploader("Suba seus arquivos (ZIP ou XML):", accept_multiple_files=True)
-        if files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            keys, rel_lista, seq = set(), [], {}
-            buf_org = io.BytesIO()
-            buf_todos = io.BytesIO()
+        uploaded_files = st.file_uploader("Suba seus arquivos:", accept_multiple_files=True)
+        if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
+            keys, rel, seq = set(), [], {}
+            buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Processando jazidas separadas...", expanded=True) as status:
+            with st.status("⛏️ Minerando jazidas paralelas...", expanded=True) as status:
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
-                    for f in files:
+                    for f in uploaded_files:
                         f_bytes = f.read()
-                        temp_contents = []
+                        temp = []
                         if f.name.lower().endswith('.zip'):
                             with zipfile.ZipFile(io.BytesIO(f_bytes)) as z_in:
                                 for name in z_in.namelist():
                                     if name.lower().endswith('.xml'):
-                                        temp_contents.append((os.path.basename(name), z_in.read(name)))
+                                        temp.append((os.path.basename(name), z_in.read(name)))
                         else:
-                            temp_contents.append((os.path.basename(f.name), f_bytes))
+                            temp.append((os.path.basename(f.name), f_bytes))
 
-                        for name, xml_data in temp_contents:
+                        for name, xml_data in temp:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             k = res["Chave"] if res["Chave"] else name
                             if k not in keys:
                                 keys.add(k)
-                                # Grava no ZIP de Pastas
-                                z_org.writestr(f"{res['Pasta']}/{res['Arquivo']}", xml_data)
-                                # Grava no ZIP TODOS (apenas arquivos soltos)
-                                z_todos.writestr(res['Arquivo'], xml_data)
-                                rel_lista.append(res)
+                                # ZIP 1: Organizado
+                                z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
+                                # ZIP 2: Todos soltos
+                                z_todos.writestr(name, xml_data)
+                                rel.append(res)
                                 if is_p and res["Número"] > 0:
                                     sk = (res["Tipo"], res["Série"])
                                     if sk not in seq: seq[sk] = set()
                                     seq[sk].add(res["Número"])
-                        del temp_contents
+                        del temp
 
+            # Buracos
             faltantes = []
             for (t, s), nums in seq.items():
                 if len(nums) > 1:
@@ -126,52 +128,44 @@ if st.session_state['confirmado']:
             st.session_state.update({
                 'zip_org': buf_org.getvalue(),
                 'zip_todos': buf_todos.getvalue(),
-                'relatorio': rel_lista,
+                'relatorio': rel,
                 'df_faltantes': pd.DataFrame(faltantes),
                 'garimpo_ok': True
             })
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state.get('relatorio', []))} pepitas encontradas.")
+        # EXIBIÇÃO SEGURA DOS RESULTADOS
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state.get('relatorio', []))} arquivos processados.")
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME", len(st.session_state.get('relatorio', [])))
-        c2.metric("✨ CLIENTE", len([x for x in st.session_state.get('relatorio', []) if "EMITIDOS" in x['Pasta']]))
-        c3.metric("⚠️ BURACOS", len(st.session_state.get('df_faltantes', [])))
+        if 'relatorio' in st.session_state:
+            df_res = pd.DataFrame(st.session_state['relatorio'])
+            c1.metric("📦 VOLUME", len(df_res))
+            emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
+            c2.metric("✨ CLIENTE", emitidas)
+            c3.metric("⚠️ BURACOS", len(st.session_state.get('df_faltantes', [])))
 
         st.divider()
         st.markdown("### 📥 ESCOLHA SUA EXTRAÇÃO")
-        col_btn1, col_btn2 = st.columns(2)
+        col1, col2 = st.columns(2)
         
-        with col_btn1:
-            st.download_button(
-                label="📂 BAIXAR ORGANIZADO (POR PASTAS)",
-                data=st.session_state['zip_org'],
-                file_name="garimpo_estruturado.zip",
-                use_container_width=True
-            )
-            st.caption("Ideal para contabilidade (separado por série e tipo).")
+        # Só mostra o botão se a chave existir no session_state para evitar o KeyError
+        with col1:
+            if 'zip_org' in st.session_state:
+                st.download_button("📂 BAIXAR ORGANIZADO (POR PASTAS)", st.session_state['zip_org'], "garimpo_pastas.zip", use_container_width=True)
+            else:
+                st.error("Erro ao carregar ZIP organizado. Tente resetar.")
 
-        with col_btn2:
-            st.download_button(
-                label="📦 BAIXAR TODOS (ARQUIVOS SOLTOS)",
-                data=st.session_state['zip_todos'],
-                file_name="todos_xml_brutos.zip",
-                use_container_width=True
-            )
-            st.caption("Ideal para importação em massa (sem subpastas).")
+        with col2:
+            if 'zip_todos' in st.session_state:
+                st.download_button("📦 BAIXAR TODOS (SÓ XML SOLTO)", st.session_state['zip_todos'], "todos_xml.zip", use_container_width=True)
+            else:
+                st.error("Erro ao carregar ZIP de XMLs soltos.")
 
         st.divider()
-        st.markdown("### 🔍 PENEIRA INDIVIDUAL")
-        busca = st.text_input("Número ou Chave:")
-        df_res = pd.DataFrame(st.session_state.get('relatorio', []))
-        if busca and not df_res.empty:
-            filtro = df_res[df_res['Número'].astype(str).contains(busca) | df_res['Chave'].contains(busca)]
-            st.dataframe(filtro[["Arquivo", "Tipo", "Série", "Número"]], use_container_width=True, hide_index=True)
-
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
         st.dataframe(st.session_state.get('df_faltantes', pd.DataFrame()), use_container_width=True, hide_index=True)
 
         if st.button("⛏️ NOVO GARIMPO"):
-            st.session_state['garimpo_ok'] = False
+            st.session_state.clear()
             st.rerun()
