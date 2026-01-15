@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (COMPLETO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -58,10 +58,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 def format_cnpj(cnpj):
     cnpj = "".join(filter(str.isdigit, cnpj))
     if len(cnpj) > 14: cnpj = cnpj[:14]
-    if len(cnpj) <= 2: return cnpj
-    if len(cnpj) <= 5: return f"{cnpj[:2]}.{cnpj[2:]}"
-    if len(cnpj) <= 8: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:]}"
-    if len(cnpj) <= 12: return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:]}"
+    if len(cnpj) <= 12: return cnpj
     return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
 
 # --- DESIGN PREMIUM REFINADO ---
@@ -78,23 +75,8 @@ st.markdown("""
     h1 { font-size: 3.5rem !important; text-shadow: 2px 2px 0px #fff; }
     [data-testid="stMetric"] { background: linear-gradient(135deg, #ffffff 0%, #fff9e6 100%); border: 2px solid #d4af37; border-radius: 20px; padding: 25px; box-shadow: 8px 8px 20px rgba(0,0,0,0.12); }
     [data-testid="stMetricValue"] { color: #a67c00 !important; font-weight: 900 !important; font-size: 2.5rem !important; }
-    
-    div.stButton > button:first-child {
-        background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%);
-        color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 20px 40px;
-        font-size: 22px; font-weight: 900 !important; border-radius: 50px; box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-        width: 100%; text-transform: uppercase;
-    }
-    
-    .stDownloadButton > button {
-        background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important;
-        color: #2b1e16 !important; border: 2px solid #8a6d3b !important;
-        padding: 20px !important; font-weight: 900 !important; font-size: 18px !important;
-        border-radius: 15px !important; width: 100% !important; text-transform: uppercase !important;
-    }
-    
-    .gold-item { position: fixed; top: -50px; z-index: 9999; pointer-events: none; animation: drop 3.5s linear forwards; }
-    @keyframes drop { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: 0; } }
+    div.stButton > button:first-child { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%); color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 20px 40px; font-size: 22px; font-weight: 900 !important; border-radius: 50px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); width: 100%; text-transform: uppercase; }
+    .stDownloadButton > button { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important; color: #2b1e16 !important; border: 2px solid #8a6d3b !important; padding: 20px !important; font-weight: 900 !important; font-size: 18px !important; border-radius: 15px !important; width: 100% !important; text-transform: uppercase !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -121,7 +103,6 @@ with st.sidebar:
 # --- ÁREA DE TRABALHO ---
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
-        st.markdown(f"### 📦 JAZIDA DE ARQUIVOS: {format_cnpj(raw_cnpj)}")
         uploaded_files = st.file_uploader("Arraste seus XMLs ou ZIPs aqui:", accept_multiple_files=True)
         if uploaded_files:
             if st.button("🚀 INICIAR GRANDE GARIMPO"):
@@ -146,18 +127,14 @@ if st.session_state['confirmado']:
                                 key = res["Chave"] if len(res["Chave"]) == 44 else name
                                 if key not in processed_keys:
                                     processed_keys.add(key)
-                                    # 1. Coloca na estrutura de pastas organizada
                                     zf.writestr(f"{res['Pasta']}/{name}", xml_data)
-                                    # 2. Coloca na pasta TODOS dentro do mesmo ZIP
                                     zf.writestr(f"TODOS/{name}", xml_data)
-                                    
                                     relatorio_lista.append(res)
                                     if is_p and res["Número"] > 0 and "EMITIDOS" in res["Pasta"]:
-                                        s_key = (res["Tipo"], res["Série"])
-                                        if s_key not in sequencias: sequencias[s_key] = set()
-                                        sequencias[s_key].add(res["Número"])
+                                        s_k = (res["Tipo"], res["Série"])
+                                        if s_k not in sequencias: sequencias[s_k] = set()
+                                        sequencias[s_k].add(res["Número"])
 
-                # Auditoria de Faltantes
                 faltantes = []
                 for (t, s), nums in sequencias.items():
                     if len(nums) > 1:
@@ -165,21 +142,10 @@ if st.session_state['confirmado']:
                         for b in sorted(list(ideal - nums)):
                             faltantes.append({"Documento": t, "Série": s, "Nº Faltante": b})
 
-                st.session_state.update({
-                    'zip_final': buf.getvalue(),
-                    'relatorio': relatorio_lista,
-                    'df_faltantes': pd.DataFrame(faltantes),
-                    'garimpo_ok': True
-                })
+                st.session_state.update({'zip_final': buf.getvalue(), 'relatorio': relatorio_lista, 'df_faltantes': pd.DataFrame(faltantes), 'garimpo_ok': True})
                 st.rerun()
     else:
-        # --- EXIBIÇÃO ---
-        icons = ["💰", "✨", "💎", "🥇"]
-        rain_html = "".join([f'<div class="gold-item" style="left:{random.randint(0,95)}%; animation-delay:{random.uniform(0,2)}s; font-size:{random.randint(25,45)}px;">{random.choice(icons)}</div>' for i in range(50)])
-        st.markdown(rain_html, unsafe_allow_html=True)
-        
-        st.success(f"⛏️ Garimpo Finalizado! {len(st.session_state['relatorio'])} pepitas únicas encontradas.")
-        
+        st.success(f"⛏️ Garimpo Finalizado! {len(st.session_state['relatorio'])} arquivos únicos.")
         df_res = pd.DataFrame(st.session_state['relatorio'])
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME TOTAL", len(df_res))
@@ -188,26 +154,18 @@ if st.session_state['confirmado']:
         c3.metric("⚠️ BURACOS", len(st.session_state['df_faltantes']))
 
         st.divider()
-        st.markdown("### 📥 EXTRAIR TESOURO")
-        st.download_button("📂 BAIXAR GARIMPO COMPLETO (Inclui pasta TODOS)", st.session_state['zip_final'], "garimpo_o_garimpeiro.zip", "application/zip", use_container_width=True)
-        st.caption("O ZIP contém as pastas organizadas (Emitidas/Recebidas) e uma pasta extra chamada 'TODOS' com tudo misturado.")
+        st.download_button("📂 BAIXAR GARIMPO COMPLETO (Inclui pasta TODOS)", st.session_state['zip_final'], "garimpo.zip", use_container_width=True)
 
         st.divider()
         st.markdown("### 🔍 PENEIRA INDIVIDUAL (BUSCA)")
-        busca = st.text_input("Pesquisar por Número ou Chave:", placeholder="Ex: 1234")
+        busca = st.text_input("Número ou Chave:")
         if busca:
             filtro = df_res[df_res['Número'].astype(str).str.contains(busca) | df_res['Chave'].str.contains(busca)]
-            if not filtro.empty:
-                for _, row in filtro.iterrows():
-                    st.download_button(f"📥 Baixar XML Nº {row['Número']}", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
-            else:
-                st.warning("Nenhum arquivo encontrado com esse critério.")
+            for _, row in filtro.iterrows():
+                st.download_button(f"📥 XML Nº {row['Número']}", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
 
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
-        if not st.session_state['df_faltantes'].empty:
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-        else:
-            st.success("Mina íntegra! Sequência completa detectada.")
+        st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
 
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state['garimpo_ok'] = False
