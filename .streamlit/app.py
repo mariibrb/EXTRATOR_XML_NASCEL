@@ -4,24 +4,22 @@ import io
 import os
 import re
 import pandas as pd
-import random
 
-# --- MOTOR DE IDENTIFICAÇÃO (SÓ PROCESSA XML LEGÍTIMO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
     
-    # 1. BLOQUEIO DE ARQUIVOS OCULTOS E TEMPORÁRIOS DO EXCEL
     if nome_puro.startswith('.') or nome_puro.startswith('~') or not nome_puro.lower().endswith('.xml'):
         return None, False
 
     resumo = {
         "Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0",
-        "Número": 0, "Pasta": "RECEBIDOS_TERCEIROS/OUTROS"
+        "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS",
+        "Valor": 0.0
     }
     try:
-        # 2. VALIDAÇÃO DE CONTEÚDO (SÓ XML ENTRA)
-        content_str = content_bytes[:8192].decode('utf-8', errors='ignore')
+        content_str = content_bytes[:15000].decode('utf-8', errors='ignore')
         if '<?xml' not in content_str and '<inf' not in content_str:
             return None, False
 
@@ -42,10 +40,18 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             tipo = "Inutilizacoes"
             
         resumo["Tipo"] = tipo
+        resumo["Status"] = status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
+        
+        # Captura de Número
         n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
         resumo["Número"] = int(n_match.group(1)) if n_match else 0
         
+        # Captura de Valor Total (vNF ou vTPrest para CT-e)
+        if status == "NORMAIS":
+            v_match = re.search(r'<(?:vnf|vtprest)>([\d.]+)</', tag_l)
+            resumo["Valor"] = float(v_match.group(1)) if v_match else 0.0
+
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         is_p = (cnpj_emit == client_cnpj_clean) or (resumo["Chave"] and client_cnpj_clean in resumo["Chave"][6:20])
         resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo}/{status}/Serie_{resumo['Série']}" if is_p else f"RECEBIDOS_TERCEIROS/{tipo}"
@@ -89,10 +95,10 @@ if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("Suba seus arquivos:", accept_multiple_files=True)
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            keys, rel, seq = set(), [], {}
+            keys, rel, seq, status_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0, "TOTAL_REAIS": 0.0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Peneirando apenas XMLs...", expanded=True) as status:
+            with st.status("⛏️ Minerando jazida profunda...", expanded=True) as status:
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
@@ -117,35 +123,33 @@ if st.session_state['confirmado']:
                                     z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
                                     z_todos.writestr(name, xml_data)
                                     rel.append(res)
-                                    if is_p and res["Número"] > 0:
-                                        # Armazena por (Tipo, Série) para o resumo e buracos
-                                        sk = (res["Tipo"], res["Série"])
-                                        if sk not in seq: seq[sk] = set()
-                                        seq[sk].add(res["Número"])
+                                    if is_p:
+                                        status_counts["TOTAL_REAIS"] += res["Valor"]
+                                        if res["Status"] in status_counts:
+                                            status_counts[res["Status"]] += 1
+                                        if res["Número"] > 0:
+                                            sk = (res["Tipo"], res["Série"])
+                                            if sk not in seq: seq[sk] = {"nums": set(), "valor": 0.0}
+                                            seq[sk]["nums"].add(res["Número"])
+                                            seq[sk]["valor"] += res["Valor"]
                         del temp
 
-            # Relatório de Séries e Buracos
-            resumo_series = []
-            faltantes = []
-            for (tipo_doc, serie_doc), nums in seq.items():
+            resumo_series, faltantes = [], []
+            for (tipo_doc, serie_doc), dados in seq.items():
+                nums = dados["nums"]
                 min_n, max_n = min(nums), max(nums)
                 resumo_series.append({
-                    "Documento": tipo_doc,
-                    "Série": serie_doc,
-                    "Início": min_n,
-                    "Fim": max_n,
-                    "Qtd Encontrada": len(nums)
+                    "Documento": tipo_doc, 
+                    "Série": serie_doc, 
+                    "Início": min_n, 
+                    "Fim": max_n, 
+                    "Qtd": len(nums),
+                    "Valor Total (R$)": round(dados["valor"], 2)
                 })
-                
                 if len(nums) > 1:
                     ideal = set(range(min_n, max_n + 1))
-                    buracos = sorted(list(ideal - nums))
-                    for b in buracos:
-                        faltantes.append({
-                            "Documento": tipo_doc, 
-                            "Série": serie_doc, 
-                            "Nº Faltante": b
-                        })
+                    for b in sorted(list(ideal - nums)):
+                        faltantes.append({"Documento": tipo_doc, "Série": serie_doc, "Nº Faltante": b})
 
             st.session_state.update({
                 'zip_org': buf_org.getvalue(),
@@ -153,46 +157,33 @@ if st.session_state['confirmado']:
                 'relatorio': rel,
                 'df_resumo': pd.DataFrame(resumo_series),
                 'df_faltantes': pd.DataFrame(faltantes),
+                'status_counts': status_counts,
                 'garimpo_ok': True
             })
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state.get('relatorio', []))} XMLs únicos.")
+        st.success(f"⛏️ Garimpo Concluído!")
         
-        c1, c2, c3 = st.columns(3)
-        if 'relatorio' in st.session_state:
-            df_res = pd.DataFrame(st.session_state['relatorio'])
-            c1.metric("📦 VOLUME", len(df_res))
-            emitidas = len(df_res[df_res['Pasta'].str.contains("EMITIDOS")])
-            c2.metric("✨ CLIENTE", emitidas)
-            c3.metric("⚠️ BURACOS", len(st.session_state.get('df_faltantes', [])))
+        sc = st.session_state.get('status_counts', {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📦 VOLUME ÚNICO", len(st.session_state.get('relatorio', [])))
+        c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
+        c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
+        c4.metric("💰 VALOR TOTAL (R$)", f"R$ {sc.get('TOTAL_REAIS', 0.0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
 
-        # --- NOVAS TABELAS DE RESUMO E AUDITORIA ---
-        st.divider()
-        st.markdown("### 📊 RESUMO DE SÉRIES (EMITIDAS)")
+        st.markdown("### 📊 RESUMO DE SÉRIES E VALORES (EMITIDAS)")
         st.dataframe(st.session_state.get('df_resumo', pd.DataFrame()), use_container_width=True, hide_index=True)
 
-        st.divider()
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS)")
-        df_fal = st.session_state.get('df_faltantes', pd.DataFrame())
-        if not df_fal.empty:
-            # Destaque visual para indicar a série onde está o buraco
-            st.warning("Foram localizados saltos na numeração das séries abaixo:")
-            st.dataframe(df_fal, use_container_width=True, hide_index=True)
-        else:
-            st.success("Nenhum buraco localizado nas sequências das séries.")
+        st.dataframe(st.session_state.get('df_faltantes', pd.DataFrame()), use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("### 📥 ESCOLHA SUA EXTRAÇÃO")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if 'zip_org' in st.session_state:
-                st.download_button("📂 BAIXAR ORGANIZADO (POR PASTAS)", st.session_state['zip_org'], "garimpo_pastas.zip", use_container_width=True)
-
-        with col2:
-            if 'zip_todos' in st.session_state:
-                st.download_button("📦 BAIXAR TODOS (SÓ XML SOLTO)", st.session_state['zip_todos'], "todos_xml.zip", use_container_width=True)
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            st.download_button("📂 BAIXAR ORGANIZADO (POR PASTAS)", st.session_state['zip_org'], "garimpo_pastas.zip", use_container_width=True)
+        with col_btn2:
+            st.download_button("📦 BAIXAR TODOS (SÓ XML SOLTO)", st.session_state['zip_todos'], "todos_xml.zip", use_container_width=True)
 
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear()
