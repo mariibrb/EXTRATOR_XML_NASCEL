@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import random
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTENDO HIERARQUIA FISCAL) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -38,17 +38,14 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         elif '110110' in tag_l: status = "CARTA_CORRECAO"
         elif '<inutnfe' in tag_l or '<procinut' in tag_l:
             status = "INUTILIZADOS"
-            # Mantemos o Tipo para a pasta, mas a auditoria usará o modelo base
-            tipo_para_pasta = "Inutilizacoes"
-        else:
-            tipo_para_pasta = tipo
+            tipo = "Inutilizacoes"
             
         resumo["Tipo"] = tipo
         resumo["Status"] = status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
         
-        # Captura ampla de números (incluindo faixas de inutilização)
-        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini|ninfini)>(\d+)</', tag_l)
+        # Captura de número ampla (nnf ou nnfini para inutilizações)
+        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
         resumo["Número"] = int(n_match.group(1)) if n_match else 0
         
         if status == "NORMAIS":
@@ -57,17 +54,12 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         is_p = (cnpj_emit == client_cnpj_clean) or (resumo["Chave"] and client_cnpj_clean in resumo["Chave"][6:20])
-        
-        if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo_para_pasta}/{status}/Serie_{resumo['Série']}"
-        else:
-            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{tipo}"
-            
+        resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo}/{status}/Serie_{resumo['Série']}" if is_p else f"RECEBIDOS_TERCEIROS/{tipo}"
         return resumo, is_p
     except:
         return None, False
 
-# --- DESIGN PREMIUM ---
+# --- DESIGN ---
 st.set_page_config(page_title="O Garimpeiro", layout="wide", page_icon="⛏️")
 st.markdown("""
     <style>
@@ -107,57 +99,58 @@ with st.sidebar:
 
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
-        files = st.file_uploader("Suba seus arquivos:", accept_multiple_files=True)
-        if files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            processed_keys, rel_list, auditoria_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
+        uploaded_files = st.file_uploader("Suba seus arquivos:", accept_multiple_files=True)
+        if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
+            p_keys, rel_list, seq_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando...", expanded=True):
+            with st.status("⛏️ Processando...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
-                    for f in files:
+                    for f in uploaded_files:
                         f_bytes = f.read()
                         items = []
                         if f.name.lower().endswith('.zip'):
                             with zipfile.ZipFile(io.BytesIO(f_bytes)) as z_in:
                                 for n in z_in.namelist():
-                                    if n.lower().endswith('.xml') and not os.path.basename(n).startswith(('.', '~')):
-                                        items.append((os.path.basename(n), z_in.read(n)))
-                        elif f.name.lower().endswith('.xml'):
+                                    b_n = os.path.basename(n)
+                                    if b_n.lower().endswith('.xml') and not b_n.startswith(('.', '~')):
+                                        items.append((b_n, z_in.read(n)))
+                        else:
                             items.append((os.path.basename(f.name), f_bytes))
 
                         for name, xml_data in items:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             if res:
                                 key = res["Chave"] if res["Chave"] else name
-                                if key not in processed_keys:
-                                    processed_keys.add(key)
+                                if key not in p_keys:
+                                    p_keys.add(key)
                                     z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
                                     z_todos.writestr(name, xml_data)
                                     rel_list.append(res)
                                     
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
-                                        # UNIFICAÇÃO PARA AUDITORIA: Ignora se é Inutilização ou Nota
-                                        grupo = (res["Tipo"], res["Série"])
-                                        if grupo not in auditoria_map:
-                                            auditoria_map[grupo] = {"nums": set(), "valor": 0.0}
-                                        auditoria_map[grupo]["nums"].add(res["Número"])
-                                        auditoria_map[grupo]["valor"] += res["Valor"]
+                                        # LÓGICA DE AUDITORIA: Inutilização ou Nota NORMAL preenchem a sequência
+                                        # Definimos o "Modelo" real (ex: se for Inutilização de NF-e, tratar como NF-e para o buraco)
+                                        mod_real = "NF-e" if "nfe" in res["Arquivo"].lower() or res["Tipo"] == "Inutilizacoes" else res["Tipo"]
+                                        sk = (mod_real, res["Série"])
+                                        if sk not in seq_map: seq_map[sk] = {"nums": set(), "valor": 0.0}
+                                        seq_map[sk]["nums"].add(res["Número"])
+                                        seq_map[sk]["valor"] += res["Valor"]
 
-            # Geração do Resumo e Auditoria Real
             res_final, fal_final = [], []
-            for (tipo, serie), dados in auditoria_map.items():
+            for (t, s), dados in seq_map.items():
                 ns = dados["nums"]
                 res_final.append({
-                    "Documento": tipo, "Série": serie, "Início": min(ns), "Fim": max(ns),
+                    "Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns),
                     "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
                 })
                 if len(ns) > 1:
                     buracos = sorted(list(set(range(min(ns), max(ns) + 1)) - ns))
                     for b in buracos:
-                        fal_final.append({"Documento": tipo, "Série": serie, "Nº Faltante": b})
+                        fal_final.append({"Documento": t, "Série": s, "Nº Faltante": b})
 
             st.session_state.update({
                 'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(),
@@ -166,7 +159,7 @@ if st.session_state['confirmado']:
             })
             st.rerun()
     else:
-        st.success("⛏️ Garimpo Concluído!")
+        st.success(f"⛏️ Garimpo Concluído!")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
@@ -177,10 +170,7 @@ if st.session_state['confirmado']:
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
 
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS REAIS)")
-        if not st.session_state['df_faltantes'].empty:
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-        else:
-            st.info("✅ Nenhuma quebra de sequência detectada (Notas + Inutilizações cobrem tudo).")
+        st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("### 🔍 PENEIRA INDIVIDUAL (BUSCA)")
@@ -194,8 +184,12 @@ if st.session_state['confirmado']:
         st.divider()
         st.markdown("### 📥 EXTRAÇÃO FINAL")
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        with col1:
+            if st.session_state['z_org']:
+                st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
+        with col2:
+            if st.session_state['z_todos']:
+                st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
 
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear()
