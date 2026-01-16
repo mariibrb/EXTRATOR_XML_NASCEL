@@ -44,7 +44,8 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         resumo["Status"] = status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
         
-        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
+        # Captura de número para notas normais ou inutilizações
+        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini|ninfini)>(\d+)</', tag_l)
         resumo["Número"] = int(n_match.group(1)) if n_match else 0
         
         if status == "NORMAIS":
@@ -73,7 +74,7 @@ st.markdown("""
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# INICIALIZAÇÃO SEGURA DO ESTADO
+# INICIALIZAÇÃO SEGURA
 for key in ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']:
     if key not in st.session_state:
         if 'df' in key: st.session_state[key] = pd.DataFrame()
@@ -102,7 +103,7 @@ if st.session_state['confirmado']:
             keys, rel_list, seq, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando jazida...", expanded=True) as status:
+            with st.status("⛏️ Minerando...", expanded=True) as status:
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as zf_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as zf_todos:
                     
@@ -127,9 +128,16 @@ if st.session_state['confirmado']:
                                     zf_org.writestr(f"{res['Pasta']}/{name}", xml_data)
                                     zf_todos.writestr(name, xml_data)
                                     rel_list.append(res)
+                                    
+                                    # Lógica de auditoria: Inutilização NÃO é buraco
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
-                                        sk = (res["Tipo"], res["Série"])
+                                        
+                                        # Agrupamos por Tipo e Série para conferir sequência
+                                        # Notas e Inutilizações do mesmo modelo/série preenchem a mesma sequência
+                                        tipo_base = "NF-e" if res["Tipo"] == "Inutilizacoes" else res["Tipo"]
+                                        sk = (tipo_base, res["Série"])
+                                        
                                         if sk not in seq: seq[sk] = {"nums": set(), "valor": 0.0}
                                         seq[sk]["nums"].add(res["Número"])
                                         seq[sk]["valor"] += res["Valor"]
@@ -138,7 +146,11 @@ if st.session_state['confirmado']:
             res_series, fal_list = [], []
             for (t, s), dados in seq.items():
                 ns = dados["nums"]
-                res_series.append({"Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), "Qtd": len(ns), "Valor Total (R$)": round(dados["valor"], 2)})
+                res_series.append({
+                    "Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), 
+                    "Qtd Encontrada": len(ns), "Valor Total (R$)": round(dados["valor"], 2)
+                })
+                # Auditoria de buracos: Só o que realmente não tem XML nenhum
                 if len(ns) > 1:
                     for b in sorted(list(set(range(min(ns), max(ns) + 1)) - ns)):
                         fal_list.append({"Documento": t, "Série": s, "Nº Faltante": b})
@@ -150,18 +162,21 @@ if st.session_state['confirmado']:
             })
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos processados.")
+        st.success(f"⛏️ Garimpo Concluído!")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
 
-        st.markdown("### 📊 RESUMO POR SÉRIE E VALORES")
+        st.markdown("### 📊 RESUMO POR SÉRIE E VALOR CONTÁBIL")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
 
-        st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS)")
-        st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+        st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS REAIS)")
+        if not st.session_state['df_faltantes'].empty:
+            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+        else:
+            st.info("✅ Nenhuma quebra de sequência detectada.")
 
         st.divider()
         st.markdown("### 🔍 PENEIRA INDIVIDUAL (BUSCA)")
@@ -170,7 +185,7 @@ if st.session_state['confirmado']:
             df_full = pd.DataFrame(st.session_state['relatorio'])
             filtro = df_full[df_full['Número'].astype(str).contains(busca) | df_full['Chave'].contains(busca)]
             for _, row in filtro.iterrows():
-                st.download_button(f"📥 XML Nº {row['Número']}", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
+                st.download_button(f"📥 XML Nº {row['Número']} ({row['Status']})", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
 
         st.divider()
         st.markdown("### 📥 EXTRAÇÃO FINAL")
