@@ -65,16 +65,22 @@ st.markdown("""
     #MainMenu, footer, header, .stAppDeployButton {visibility: hidden !important;}
     .stApp { background-color: #f7f3f0; }
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #EADBC8 0%, #D2B48C 100%) !important; border-right: 3px solid #b8860b; }
-    h1, h2, h3, h4, p, label, .stMetric label { color: #2b1e16 !important; font-family: 'Playfair Display', serif; }
+    h1, h2, h3, h4, p, label, .stMetric label { color: #2b1e16 !important; font-family: 'Playfair Display', serif; font-weight: 900 !important;}
     [data-testid="stMetric"] { background: linear-gradient(135deg, #ffffff 0%, #fff9e6 100%); border: 2px solid #d4af37; border-radius: 20px; padding: 20px; }
-    div.stButton > button { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important; color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 20px !important; border-radius: 50px !important; width: 100% !important; text-transform: uppercase !important; }
+    div.stButton > button { background: linear-gradient(180deg, #fcf6ba 0%, #d4af37 40%, #aa771c 100%) !important; color: #2b1e16 !important; border: 2px solid #8a6d3b; padding: 20px !important; border-radius: 50px !important; width: 100% !important; text-transform: uppercase !important; font-weight: 900 !important;}
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center;'>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-if 'garimpo_ok' not in st.session_state: st.session_state['garimpo_ok'] = False
-if 'confirmado' not in st.session_state: st.session_state['confirmado'] = False
+# INICIALIZAÇÃO SEGURA DO ESTADO
+for key in ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']:
+    if key not in st.session_state:
+        if 'df' in key: st.session_state[key] = pd.DataFrame()
+        elif 'z_' in key: st.session_state[key] = None
+        elif 'relatorio' in key: st.session_state[key] = []
+        elif 'st_counts' in key: st.session_state[key] = {"CANCELADOS": 0, "INUTILIZADOS": 0}
+        else: st.session_state[key] = False
 
 with st.sidebar:
     st.markdown("### ⛏️ Painel de Extração")
@@ -93,12 +99,12 @@ if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
         files = st.file_uploader("Suba seus arquivos:", accept_multiple_files=True)
         if files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            keys, rel, seq, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
+            keys, rel_list, seq, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando...", expanded=True) as status:
-                with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
-                     zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
+            with st.status("⛏️ Minerando jazida...", expanded=True) as status:
+                with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as zf_org, \
+                     zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as zf_todos:
                     
                     for f in files:
                         f_bytes = f.read()
@@ -118,9 +124,9 @@ if st.session_state['confirmado']:
                                 k = res["Chave"] if res["Chave"] else name
                                 if k not in keys:
                                     keys.add(k)
-                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
-                                    z_todos.writestr(name, xml_data)
-                                    rel.append(res)
+                                    zf_org.writestr(f"{res['Pasta']}/{name}", xml_data)
+                                    zf_todos.writestr(name, xml_data)
+                                    rel_list.append(res)
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
                                         sk = (res["Tipo"], res["Série"])
@@ -129,51 +135,52 @@ if st.session_state['confirmado']:
                                         seq[sk]["valor"] += res["Valor"]
                         del temp_list
 
-            resumo_series, faltantes = [], []
+            res_series, fal_list = [], []
             for (t, s), dados in seq.items():
                 ns = dados["nums"]
-                resumo_series.append({
-                    "Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns),
-                    "Quantidade": len(ns), "Valor Total (R$)": round(dados["valor"], 2)
-                })
+                res_series.append({"Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), "Qtd": len(ns), "Valor Total (R$)": round(dados["valor"], 2)})
                 if len(ns) > 1:
                     for b in sorted(list(set(range(min(ns), max(ns) + 1)) - ns)):
-                        faltantes.append({"Documento": t, "Série": s, "Nº Faltante": b})
+                        fal_list.append({"Documento": t, "Série": s, "Nº Faltante": b})
 
             st.session_state.update({
-                'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'rel': rel,
-                'df_resumo': pd.DataFrame(resumo_series), 'df_fal': pd.DataFrame(faltantes),
-                'st_counts': st_counts, 'garimpo_ok': True
+                'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(),
+                'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_series),
+                'df_faltantes': pd.DataFrame(fal_list), 'st_counts': st_counts, 'garimpo_ok': True
             })
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído!")
-        sc = st.session_state.get('st_counts', {})
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos processados.")
+        sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME ÚNICO", len(st.session_state.get('rel', [])))
+        c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
 
-        st.markdown("### 📊 RESUMO POR SÉRIE E VALOR")
-        st.dataframe(st.session_state.get('df_resumo', pd.DataFrame()), use_container_width=True, hide_index=True)
+        st.markdown("### 📊 RESUMO POR SÉRIE E VALORES")
+        st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
 
         st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS)")
-        st.dataframe(st.session_state.get('df_fal', pd.DataFrame()), use_container_width=True, hide_index=True)
+        st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("### 🔍 PENEIRA INDIVIDUAL (BUSCA)")
         busca = st.text_input("Número ou Chave:")
         if busca:
-            df_full = pd.DataFrame(st.session_state.get('rel', []))
+            df_full = pd.DataFrame(st.session_state['relatorio'])
             filtro = df_full[df_full['Número'].astype(str).contains(busca) | df_full['Chave'].contains(busca)]
             for _, row in filtro.iterrows():
                 st.download_button(f"📥 XML Nº {row['Número']}", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
 
         st.divider()
-        st.markdown("### 📥 EXTRAÇÃO")
+        st.markdown("### 📥 EXTRAÇÃO FINAL")
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        with col1:
+            if st.session_state['z_org']:
+                st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
+        with col2:
+            if st.session_state['z_todos']:
+                st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
 
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear()
