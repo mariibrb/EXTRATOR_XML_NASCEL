@@ -127,13 +127,17 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         elif '<infcte' in tag_l or '<mod>57</mod>' in tag_l: tipo = "CT-e"
         elif '<infmdfe' in tag_l: tipo = "MDF-e"
         
+        # AJUSTE FINÍSSIMO: Detectar cancelamento tanto por evento quanto por status interno (cStat 101)
         status = "NORMAIS"
-        tipo_pasta = tipo
-        if '110111' in tag_l: status = "CANCELADOS"
-        elif '110110' in tag_l: status = "CARTA_CORRECAO"
-        elif '<inutnfe' in tag_l or '<procinut' in tag_l or '<inutcte' in tag_l:
+        if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
+            status = "CANCELADOS"
+        elif '110110' in tag_l: 
+            status = "CARTA_CORRECAO"
+        elif '<inutnfe' in tag_l or '<procinut' in tag_l:
             status = "INUTILIZADOS"
             tipo_pasta = "Inutilizacoes"
+        else:
+            tipo_pasta = tipo
             
         resumo["Tipo"], resumo["Status"] = tipo, status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
@@ -152,7 +156,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         
         # Organização Hierárquica
         if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo_pasta}/{status}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo_pasta if status == 'INUTILIZADOS' else tipo}/{status}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
         else:
             resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{tipo}/{resumo['Ano']}/{resumo['Mes']}"
             
@@ -234,7 +238,7 @@ if st.session_state['confirmado']:
                         
                         for name, xml_data in items:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
-                            if res and res["Número"] > 0: # IGNORA NÚMEROS ZERADOS PARA NÃO ESTRAGAR A FAIXA INICIAL
+                            if res and res["Número"] > 0:
                                 key = res["Chave"] if res["Chave"] else name
                                 if key not in p_keys:
                                     p_keys.add(key)
@@ -243,7 +247,6 @@ if st.session_state['confirmado']:
                                     rel_list.append(res)
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
-                                        # Agrupamento unificado para auditoria (Modelo 55, 65, etc)
                                         mod_seq = "NF-e" if "NF-e" in res["Tipo"] or "Inutilizacoes" in res["Tipo"] else res["Tipo"]
                                         if "NFC-e" in res["Tipo"]: mod_seq = "NFC-e"
                                         
@@ -257,12 +260,11 @@ if st.session_state['confirmado']:
             for (t, s), dados in audit_map.items():
                 ns = dados["nums"]
                 if ns:
-                    n_min, n_max = min(ns), max(ns) # CAPTURA O INÍCIO E FIM REAIS DO LOTE
+                    n_min, n_max = min(ns), max(ns)
                     res_final.append({
                         "Documento": t, "Série": s, "Início": n_min, "Fim": n_max, 
                         "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
                     })
-                    # Auditoria de buracos apenas dentro da faixa detectada
                     buracos = sorted(list(set(range(n_min, n_max + 1)) - ns))
                     for b in buracos:
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
@@ -292,7 +294,7 @@ if st.session_state['confirmado']:
 
         st.divider()
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO (ANO/MÊS)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
         with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
