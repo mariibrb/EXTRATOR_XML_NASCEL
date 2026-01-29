@@ -6,10 +6,10 @@ import re
 import pandas as pd
 import random
 
-# --- CONFIGURAÇÃO E ESTILO DIAMOND (RIHANNA STYLE ORIGINAL) ---
+# --- CONFIGURAÇÃO E ESTILO DIAMOND TAX (RIHANNA STYLE ORIGINAL) ---
 st.set_page_config(page_title="DIAMOND TAX | O Garimpeiro", layout="wide", page_icon="⛏️")
 
-def aplicar_estilo_diamond_unificado():
+def aplicar_estilo_diamond_perfeito():
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&family=Plus+Jakarta+Sans:wght@400;700&display=swap');
@@ -20,7 +20,7 @@ def aplicar_estilo_diamond_unificado():
             background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; 
         }
 
-        /* 2. BOTÕES ESTILO DIAMOND (BRANCO GORDINHO) */
+        /* 2. BOTÕES ESTILO DIAMOND (BRANCOS GORDINHOS) */
         div.stButton > button {
             color: #6C757D !important; 
             background-color: #FFFFFF !important; 
@@ -69,21 +69,20 @@ def aplicar_estilo_diamond_unificado():
             text-align: center;
         }
 
-        /* 5. SIDEBAR UNIFICADA (LARGURA 350PX E DESIGN DIAMOND) */
+        /* 5. SIDEBAR CLONE (LARGURA FIXA E DESIGN DIAMOND) */
         [data-testid="stSidebar"] {
             background-color: #FFFFFF !important;
-            border-right: 2px solid #FFDEEF !important;
-            min-width: 350px !important;
-            max-width: 350px !important;
+            border-right: 1px solid #FFDEEF !important;
+            min-width: 400px !important;
+            max-width: 400px !important;
         }
 
-        /* CAMPO DE CNPJ DESTACADO (A CAIXINHA SEMPRE VISÍVEL) */
+        /* CAMPO DE CNPJ (IDENTICO AO DIAMOND TAX) */
         .stTextInput>div>div>input {
             border: 2px solid #FFDEEF !important;
-            border-radius: 12px !important;
+            border-radius: 10px !important;
             padding: 10px !important;
             background-color: white !important;
-            color: #6C757D !important;
         }
         
         .stTextInput>label {
@@ -106,7 +105,7 @@ def aplicar_estilo_diamond_unificado():
         </style>
     """, unsafe_allow_html=True)
 
-aplicar_estilo_diamond_unificado()
+aplicar_estilo_diamond_perfeito()
 
 # --- MOTOR DE IDENTIFICAÇÃO ORIGINAL ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
@@ -162,7 +161,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# INICIALIZAÇÃO SEGURA
+# INICIALIZAÇÃO DE ESTADO
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
@@ -174,11 +173,11 @@ for k in keys_to_init:
 
 with st.sidebar:
     st.markdown("### 🔍 Configuração")
-    # CAMPO DE CNPJ SEMPRE VISÍVEL COM DESIGN DIAMOND
+    # CAMPO CNPJ SEMPRE VISÍVEL COM DESIGN DIAMOND TAX
     cnpj_input = st.text_input(
         "CNPJ DO CLIENTE", 
         placeholder="00.000.000/0001-00",
-        help="Digite o CNPJ para minerar e organizar os XMLs próprios e de terceiros."
+        help="Digite o CNPJ da empresa que está sendo auditada. Pode conter pontos, barras ou apenas números."
     )
     cnpj_limpo = "".join(filter(str.isdigit, cnpj_input))
     
@@ -187,7 +186,7 @@ with st.sidebar:
             st.session_state['confirmado'] = True
             st.rerun()
     elif cnpj_input:
-        st.error("⚠️ CNPJ Inválido")
+        st.error("⚠️ O CNPJ deve ter 14 números.")
         
     st.divider()
     if st.button("🗑️ RESETAR SISTEMA"):
@@ -196,15 +195,14 @@ with st.sidebar:
 
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
+        st.info(f"🏢 Operação liberada para o CNPJ: {cnpj_limpo}")
         uploaded_files = st.file_uploader("Arraste seus arquivos XML ou ZIP aqui:", accept_multiple_files=True)
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
             p_keys, rel_list, seq_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            
             with st.status("⛏️ Garimpando dados...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
-                    
                     for f in uploaded_files:
                         f_bytes = f.read()
                         items = []
@@ -214,94 +212,52 @@ if st.session_state['confirmado']:
                                     b_name = os.path.basename(n)
                                     if b_name.lower().endswith('.xml') and not b_name.startswith(('.', '~')):
                                         items.append((b_name, z_in.read(n)))
-                        else:
-                            items.append((os.path.basename(f.name), f_bytes))
-
+                        else: items.append((os.path.basename(f.name), f_bytes))
                         for name, xml_data in items:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             if res:
                                 key = res["Chave"] if res["Chave"] else name
                                 if key not in p_keys:
                                     p_keys.add(key)
-                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
-                                    z_todos.writestr(name, xml_data)
+                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data); z_todos.writestr(name, xml_data)
                                     rel_list.append(res)
-                                    
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
                                         sk = (res["Tipo"], res["Série"])
                                         if sk not in seq_map: seq_map[sk] = {"nums": set(), "valor": 0.0}
-                                        seq_map[sk]["nums"].add(res["Número"])
-                                        seq_map[sk]["valor"] += res["Valor"]
+                                        seq_map[sk]["nums"].add(res["Número"]); seq_map[sk]["valor"] += res["Valor"]
 
-            # Montagem dos relatórios
-            res_final = []
-            nums_encontrados_por_serie = {}
-
+            res_final, nums_encontrados_por_serie = [], {}
             for (t, s), dados in seq_map.items():
                 ns = dados["nums"]
-                res_final.append({
-                    "Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns),
-                    "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
-                })
+                res_final.append({"Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
                 if s not in nums_encontrados_por_serie: nums_encontrados_por_serie[s] = set()
                 nums_encontrados_por_serie[s].update(ns)
-
             fal_final = []
             for s, todos_nums in nums_encontrados_por_serie.items():
                 if len(todos_nums) > 1:
-                    ideal = set(range(min(todos_nums), max(todos_nums) + 1))
-                    buracos = sorted(list(ideal - todos_nums))
-                    for b in buracos:
-                        fal_final.append({"Série": s, "Nº Faltante": b})
+                    buracos = sorted(list(set(range(min(todos_nums), max(todos_nums) + 1)) - todos_nums))
+                    for b in buracos: fal_final.append({"Série": s, "Nº Faltante": b})
 
-            st.session_state.update({
-                'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(),
-                'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final),
-                'df_faltantes': pd.DataFrame(fal_final), 'st_counts': st_counts, 'garimpo_ok': True
-            })
+            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
         st.success(f"⛏️ Garimpo Concluído para o CNPJ {cnpj_limpo}!")
-        
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
-
-        st.markdown("### 📊 RESUMO POR SÉRIE E VALOR CONTÁBIL")
-        if not st.session_state['df_resumo'].empty:
-            st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
-        
-        st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS REAIS)")
+        st.markdown("### 📊 RESUMO")
+        st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         if not st.session_state['df_faltantes'].empty:
+            st.markdown("### ⚠️ BURACOS NA SEQUÊNCIA")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-        else:
-            st.success("Sequência perfeita! Nenhum buraco encontrado.")
-
         st.divider()
-        st.markdown("### 🔍 PENEIRA INDIVIDUAL (BUSCA)")
-        busca = st.text_input("Pesquisar Número ou Chave:")
-        if busca:
-            df_full = pd.DataFrame(st.session_state['relatorio'])
-            filtro = df_full[df_full['Número'].astype(str).str.contains(busca) | df_full['Chave'].str.contains(busca)]
-            if not filtro.empty:
-                for _, row in filtro.iterrows():
-                    st.download_button(f"📥 XML Nº {row['Número']} ({row['Status']})", row['Conteúdo'], row['Arquivo'], key=f"dl_{row['Chave']}_{random.random()}")
-
-        st.divider()
-        st.markdown("### 📥 EXTRAÇÃO FINAL")
         col1, col2 = st.columns(2)
-        with col1:
-            if st.session_state['z_org']:
-                st.download_button("📂 BAIXAR ORGANIZADO (PASTAS)", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
-        with col2:
-            if st.session_state['z_todos']:
-                st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
-
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
+        with col2: st.download_button("📦 BAIXAR TODOS", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
         if st.button("⛏️ NOVO GARIMPO"):
-            st.session_state.clear()
-            st.rerun()
+            st.session_state.clear(); st.rerun()
 else:
     st.warning("👈 Insira o CNPJ na barra lateral para liberar as ferramentas.")
