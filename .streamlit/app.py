@@ -249,4 +249,4 @@ if st.session_state['confirmado']:
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
 else:
-    st.warning("👈 Insira o CNPJ na barra lateral para começar.")
+    st.warning("👈 Insira o CNPJ da empresa na barra lateral para começar.")
