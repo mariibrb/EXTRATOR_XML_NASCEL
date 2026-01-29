@@ -147,7 +147,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# INICIALIZAÇÃO SEGURA
+# INICIALIZAÇÃO SEGURA (SESSION STATE)
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
@@ -157,8 +157,10 @@ for k in keys_to_init:
         elif k == 'st_counts': st.session_state[k] = {"CANCELADOS": 0, "INUTILIZADOS": 0}
         else: st.session_state[k] = False
 
+# SIDEBAR COM A TRAVA
 with st.sidebar:
     st.markdown("### 🔍 Configuração")
+    
     # Campo idêntico ao Diamond Tax
     cnpj_input = st.text_input(
         "CNPJ DO CLIENTE", 
@@ -167,9 +169,11 @@ with st.sidebar:
     )
     cnpj_limpo = "".join(filter(str.isdigit, cnpj_input))
     
+    # Instrução visual de formato
     if cnpj_input and len(cnpj_limpo) != 14:
         st.error("⚠️ O CNPJ deve ter 14 números.")
     
+    # Botão de liberação
     if len(cnpj_limpo) == 14:
         if st.button("✅ LIBERAR OPERAÇÃO"):
             st.session_state['confirmado'] = True
@@ -180,17 +184,21 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
+# CONTEÚDO SÓ APARECE SE ESTIVER CONFIRMADO
 if st.session_state['confirmado']:
     st.info(f"🏢 Operação liberada para o CNPJ: {cnpj_limpo}")
     
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("Arraste seus arquivos XML ou ZIP aqui:", accept_multiple_files=True)
+        
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
             p_keys, rel_list, seq_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
+            
             with st.status("⛏️ Garimpando dados...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
+                    
                     for f in uploaded_files:
                         f_bytes = f.read()
                         items = []
@@ -200,7 +208,9 @@ if st.session_state['confirmado']:
                                     b_name = os.path.basename(n)
                                     if b_name.lower().endswith('.xml') and not b_name.startswith(('.', '~')):
                                         items.append((b_name, z_in.read(n)))
-                        else: items.append((os.path.basename(f.name), f_bytes))
+                        else:
+                            items.append((os.path.basename(f.name), f_bytes))
+
                         for name, xml_data in items:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             if res:
@@ -215,21 +225,32 @@ if st.session_state['confirmado']:
                                         if sk not in seq_map: seq_map[sk] = {"nums": set(), "valor": 0.0}
                                         seq_map[sk]["nums"].add(res["Número"]); seq_map[sk]["valor"] += res["Valor"]
 
+            # Processamento de Relatórios
             res_final, nums_encontrados_por_serie = [], {}
             for (t, s), dados in seq_map.items():
                 ns = dados["nums"]
                 res_final.append({"Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
                 if s not in nums_encontrados_por_serie: nums_encontrados_por_serie[s] = set()
                 nums_encontrados_por_serie[s].update(ns)
+            
             fal_final = []
             for s, todos_nums in nums_encontrados_por_serie.items():
                 if len(todos_nums) > 1:
                     buracos = sorted(list(set(range(min(todos_nums), max(todos_nums) + 1)) - todos_nums))
                     for b in buracos: fal_final.append({"Série": s, "Nº Faltante": b})
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'st_counts': st_counts, 'garimpo_ok': True})
+            st.session_state.update({
+                'z_org': buf_org.getvalue(), 
+                'z_todos': buf_todos.getvalue(), 
+                'relatorio': rel_list, 
+                'df_resumo': pd.DataFrame(res_final), 
+                'df_faltantes': pd.DataFrame(fal_final), 
+                'st_counts': st_counts, 
+                'garimpo_ok': True
+            })
             st.rerun()
     else:
+        # EXIBIÇÃO DOS RESULTADOS
         st.success(f"⛏️ Garimpo Concluído com Sucesso!")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
@@ -239,14 +260,16 @@ if st.session_state['confirmado']:
 
         st.markdown("### 📊 RESUMO POR SÉRIE E VALOR CONTÁBIL")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
+        
         if not st.session_state['df_faltantes'].empty:
-            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
+            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS REAIS)")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
 
         st.divider()
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO (PASTAS)", st.session_state['z_org'], "garimpo_pastas.zip", use_container_width=True)
+        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
 else:
