@@ -141,6 +141,36 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
+# SEÇÃO SEMPRE VISÍVEL: PASSO A PASSO E OBJETIVOS
+with st.container():
+    m_col1, m_col2 = st.columns(2)
+    with m_col1:
+        st.markdown("""
+        <div class="instrucoes-card">
+            <h3>📖 Passo a Passo</h3>
+            <ol>
+                <li><b>Arquivos:</b> Arraste seus arquivos XML avulsos ou pastas ZIP contendo as notas.</li>
+                <li><b>Processamento:</b> Clique no botão <b>"🚀 INICIAR GRANDE GARIMPO"</b> para minerar os dados.</li>
+                <li><b>Conferência:</b> Verifique o resumo de volumes e a auditoria de sequência numérica.</li>
+                <li><b>Download:</b> Baixe o ZIP organizado por pastas fiscais ou a extração total.</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
+    with m_col2:
+        st.markdown("""
+        <div class="instrucoes-card">
+            <h3>📊 O que será obtido?</h3>
+            <ul>
+                <li><b>Organização Inteligente:</b> Separação automática entre notas do Cliente e de Terceiros.</li>
+                <li><b>Hierarquia de Pastas:</b> Arquivos divididos por Modelo (NF-e/CT-e/MDF-e), Status e Série.</li>
+                <li><b>Peneira de Sequência:</b> Identificação exata de números faltantes na cronologia das notas.</li>
+                <li><b>Relatório de Valor:</b> Soma do Valor Contábil por série para conferência rápida.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("---")
+
 # INICIALIZAÇÃO SEGURA
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']
 for k in keys_to_init:
@@ -164,35 +194,6 @@ with st.sidebar:
         st.rerun()
 
 if st.session_state['confirmado']:
-    # --- MANUAL E RESULTADOS ---
-    with st.container():
-        m_col1, m_col2 = st.columns(2)
-        with m_col1:
-            st.markdown("""
-            <div class="instrucoes-card">
-                <h3>📖 Passo a Passo</h3>
-                <ol>
-                    <li><b>Arquivos:</b> Arraste seus arquivos XML avulsos ou pastas ZIP contendo as notas.</li>
-                    <li><b>Processamento:</b> Clique no botão <b>"🚀 INICIAR GRANDE GARIMPO"</b> para minerar os dados.</li>
-                    <li><b>Conferência:</b> Verifique o resumo de volumes e a auditoria de sequência numérica.</li>
-                    <li><b>Download:</b> Baixe o ZIP organizado por pastas fiscais ou a extração total.</li>
-                </ol>
-            </div>
-            """, unsafe_allow_html=True)
-        with m_col2:
-            st.markdown("""
-            <div class="instrucoes-card">
-                <h3>📊 O que será obtido?</h3>
-                <ul>
-                    <li><b>Organização Inteligente:</b> Separação automática entre notas do Cliente e de Terceiros.</li>
-                    <li><b>Hierarquia de Pastas:</b> Arquivos divididos por Modelo (NF-e/CT-e/MDF-e), Status e Série.</li>
-                    <li><b>Peneira de Sequência:</b> Identificação exata de números faltantes na cronologia das notas.</li>
-                    <li><b>Relatório de Valor:</b> Soma do Valor Contábil por série para conferência rápida.</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("---")
     st.info(f"🏢 Operação liberada para o CNPJ: {cnpj_limpo}")
     
     if not st.session_state['garimpo_ok']:
