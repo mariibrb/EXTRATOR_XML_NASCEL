@@ -6,7 +6,7 @@ import re
 import pandas as pd
 import random
 
-# --- CONFIGURAÇÃO E ESTILO (CLONE ABSOLUTO DO DIAMOND TAX) ---
+# --- CONFIGURAÇÃO E ESTILO ---
 st.set_page_config(page_title="O GARIMPEIRO | Premium Edition", layout="wide", page_icon="⛏️")
 
 def aplicar_estilo_premium():
@@ -72,12 +72,6 @@ def aplicar_estilo_premium():
             text-align: center;
         }
 
-        .stTextInput>div>div>input {
-            border: 2px solid #FFDEEF !important;
-            border-radius: 10px !important;
-            padding: 10px !important;
-        }
-
         .instrucoes-card {
             background-color: rgba(255, 255, 255, 0.7);
             border-radius: 15px;
@@ -104,26 +98,29 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
     nome_puro = os.path.basename(file_name)
     if nome_puro.startswith('.') or nome_puro.startswith('~') or not nome_puro.lower().endswith('.xml'):
         return None, False
+    
     resumo = {
         "Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0",
         "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS",
-        "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "S-A", "Mes": "S-M"
+        "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00"
     }
+    
     try:
         content_str = content_bytes[:20000].decode('utf-8', errors='ignore')
         if '<?xml' not in content_str and '<inf' not in content_str: return None, False
+        
         match_ch = re.search(r'\d{44}', content_str)
         resumo["Chave"] = match_ch.group(0) if match_ch else ""
-        tag_l = content_str.lower()
         
-        # Identificação de Data (Ano/Mês)
-        data_match = re.search(r'<(?:dhemi|dhregevento|dhemi)>(\d{4})-(\d{2})', tag_l)
+        # Extração de Data para Organização de Pastas
+        data_match = re.search(r'<(?:dhemi|dhregevento)>(\d{4})-(\d{2})', content_str.lower())
         if data_match:
             resumo["Ano"], resumo["Mes"] = data_match.group(1), data_match.group(2)
         elif resumo["Chave"]:
             resumo["Ano"] = "20" + resumo["Chave"][2:4]
             resumo["Mes"] = resumo["Chave"][4:6]
 
+        tag_l = content_str.lower()
         tipo = "NF-e"
         if '<mod>65</mod>' in tag_l: tipo = "NFC-e"
         elif '<infcte' in tag_l: tipo = "CT-e"
@@ -138,6 +135,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             
         resumo["Tipo"], resumo["Status"] = tipo, status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
+        
         n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
         resumo["Número"] = int(n_match.group(1)) if n_match else 0
         
@@ -148,6 +146,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         is_p = (cnpj_emit == client_cnpj_clean) or (resumo["Chave"] and client_cnpj_clean in resumo["Chave"][6:20])
         
+        # Hierarquia de Pastas Atualizada: Cliente/Tipo/Status/Ano/Mes/Serie
         if is_p:
             resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo}/{status}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
         else:
@@ -159,7 +158,6 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-# SEÇÃO SEMPRE VISÍVEL: PASSO A PASSO E OBJETIVOS
 with st.container():
     m_col1, m_col2 = st.columns(2)
     with m_col1:
@@ -167,10 +165,10 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📖 Passo a Passo</h3>
             <ol>
-                <li><b>Arquivos:</b> Arraste seus arquivos XML avulsos ou pastas ZIP contendo as notas.</li>
-                <li><b>Processamento:</b> Clique no botão <b>"🚀 INICIAR GRANDE GARIMPO"</b> para minerar os dados.</li>
-                <li><b>Conferência:</b> Verifique o resumo de volumes e a auditoria de sequência numérica.</li>
-                <li><b>Download:</b> Baixe o ZIP organizado por pastas fiscais e período (Ano/Mês).</li>
+                <li><b>Arquivos:</b> Arraste seus arquivos XML ou pastas ZIP.</li>
+                <li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li>
+                <li><b>Auditoria:</b> O sistema checa buracos na numeração do início ao fim do lote.</li>
+                <li><b>Download:</b> Baixe o ZIP organizado por <b>Ano e Mês</b>.</li>
             </ol>
         </div>
         """, unsafe_allow_html=True)
@@ -179,17 +177,16 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📊 O que será obtido?</h3>
             <ul>
-                <li><b>Organização Temporal:</b> Separação automática por Ano e Mês de emissão.</li>
-                <li><b>Hierarquia de Pastas:</b> Arquivos divididos por Modelo (NF-e/CT-e/MDF-e), Status e Série.</li>
-                <li><b>Peneira de Sequência:</b> Identificação exata de números faltantes na cronologia das notas.</li>
-                <li><b>Relatório de Valor:</b> Soma do Valor Contábil por série para conferência rápida.</li>
+                <li><b>Organização Temporal:</b> Pastas separadas por Ano e Mês de emissão.</li>
+                <li><b>Hierarquia Fiscal:</b> Separação por Modelo, Status e Série.</li>
+                <li><b>Peneira de Sequência:</b> Auditoria completa do menor ao maior número enviado.</li>
+                <li><b>Relatório de Valor:</b> Soma total por série.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-# INICIALIZAÇÃO SEGURA
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
@@ -212,8 +209,6 @@ with st.sidebar:
         st.rerun()
 
 if st.session_state['confirmado']:
-    st.info(f"🏢 Operação liberada para o CNPJ: {cnpj_limpo}")
-    
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("Arraste seus arquivos XML ou ZIP aqui:", accept_multiple_files=True)
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
@@ -249,27 +244,25 @@ if st.session_state['confirmado']:
                                         seq_map[sk]["nums"].add(res["Número"])
                                         seq_map[sk]["valor"] += res["Valor"]
 
-            res_final, nums_encontrados_por_serie = [], {}
+            res_final, fal_final = [], []
             for (t, s), dados in seq_map.items():
-                ns = dados["nums"]
-                res_final.append({"Documento": t, "Série": s, "Início": min(ns), "Fim": max(ns), "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
-                if s not in nums_encontrados_por_serie: nums_encontrados_por_serie[s] = set()
-                nums_encontrados_por_serie[s].update(ns)
-            
-            fal_final = []
-            for s, todos_nums in nums_encontrados_por_serie.items():
-                if len(todos_nums) > 1:
-                    buracos = sorted(list(set(range(min(todos_nums), max(todos_nums) + 1)) - todos_nums))
-                    for b in buracos: fal_final.append({"Série": s, "Nº Faltante": b})
+                ns = sorted(list(dados["nums"]))
+                if ns:
+                    n_min, n_max = min(ns), max(ns)
+                    res_final.append({
+                        "Documento": t, "Série": s, "Início": n_min, "Fim": n_max, 
+                        "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
+                    })
+                    # Lógica de Auditoria: Verifica todos os números entre o inicial e o final do lote
+                    sequencia_esperada = set(range(n_min, n_max + 1))
+                    buracos = sorted(list(sequencia_esperada - dados["nums"]))
+                    for b in buracos:
+                        fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
             st.session_state.update({
-                'z_org': buf_org.getvalue(), 
-                'z_todos': buf_todos.getvalue(), 
-                'relatorio': rel_list, 
-                'df_resumo': pd.DataFrame(res_final), 
-                'df_faltantes': pd.DataFrame(fal_final), 
-                'st_counts': st_counts, 
-                'garimpo_ok': True
+                'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 
+                'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 
+                'df_faltantes': pd.DataFrame(fal_final), 'st_counts': st_counts, 'garimpo_ok': True
             })
             st.rerun()
     else:
@@ -280,16 +273,17 @@ if st.session_state['confirmado']:
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
 
-        st.markdown("### 📊 RESUMO POR SÉRIE E VALOR CONTÁBIL")
+        st.markdown("### 📊 RESUMO POR SÉRIE E VALOR")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
+        
         if not st.session_state['df_faltantes'].empty:
-            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (Nº FALTANTES)")
+            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS NO LOTE)")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
 
         st.divider()
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO POR DATA (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
+        with col2: st.download_button("📦 BAIXAR TODOS (XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
 else:
