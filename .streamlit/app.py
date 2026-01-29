@@ -138,8 +138,8 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         resumo["Tipo"], resumo["Status"] = tipo, status
         resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
         
-        # Numeração
-        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini|ninfini)>(\d+)</', tag_l)
+        # Numeração (Captura o número da nota ou o número inicial da inutilização)
+        n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
         resumo["Número"] = int(n_match.group(1)) if n_match else 0
         
         # Valor Contábil
@@ -150,7 +150,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         is_p = (cnpj_emit == client_cnpj_clean) or (resumo["Chave"] and client_cnpj_clean in resumo["Chave"][6:20])
         
-        # Organização Hierárquica Solicitada
+        # Organização Hierárquica
         if is_p:
             resumo["Pasta"] = f"EMITIDOS_CLIENTE/{tipo_pasta}/{status}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
         else:
@@ -234,7 +234,7 @@ if st.session_state['confirmado']:
                         
                         for name, xml_data in items:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
-                            if res:
+                            if res and res["Número"] > 0: # IGNORA NÚMEROS ZERADOS PARA NÃO ESTRAGAR A FAIXA INICIAL
                                 key = res["Chave"] if res["Chave"] else name
                                 if key not in p_keys:
                                     p_keys.add(key)
@@ -243,8 +243,7 @@ if st.session_state['confirmado']:
                                     rel_list.append(res)
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
-                                        # Agrupamento para auditoria (Modelo + Série)
-                                        # Unifica Notas e Inutilizações na mesma sequência para evitar buracos falsos
+                                        # Agrupamento unificado para auditoria (Modelo 55, 65, etc)
                                         mod_seq = "NF-e" if "NF-e" in res["Tipo"] or "Inutilizacoes" in res["Tipo"] else res["Tipo"]
                                         if "NFC-e" in res["Tipo"]: mod_seq = "NFC-e"
                                         
@@ -258,12 +257,12 @@ if st.session_state['confirmado']:
             for (t, s), dados in audit_map.items():
                 ns = dados["nums"]
                 if ns:
-                    n_min, n_max = min(ns), max(ns)
+                    n_min, n_max = min(ns), max(ns) # CAPTURA O INÍCIO E FIM REAIS DO LOTE
                     res_final.append({
                         "Documento": t, "Série": s, "Início": n_min, "Fim": n_max, 
                         "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
                     })
-                    # Auditoria Real: Salto na numeração que não possui XML (Nota ou Inutilização)
+                    # Auditoria de buracos apenas dentro da faixa detectada
                     buracos = sorted(list(set(range(n_min, n_max + 1)) - ns))
                     for b in buracos:
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
