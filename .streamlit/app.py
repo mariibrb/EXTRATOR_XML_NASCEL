@@ -163,7 +163,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         return resumo, is_p
     except: return None, False
 
-# --- FUNÇÃO RECURSIVA PARA MERGULHAR EM PASTAS E ZIPS (O AJUSTE) ---
+# --- FUNÇÃO RECURSIVA PARA MERGULHAR EM PASTAS E ZIPS ---
 def extrair_recursivo(conteudo_zip_ou_xml, nome_arquivo):
     itens_encontrados = []
     
@@ -177,7 +177,7 @@ def extrair_recursivo(conteudo_zip_ou_xml, nome_arquivo):
                         continue
                     
                     sub_conteudo = z.read(sub_nome)
-                    # RECURSÃO: Se achar outro ZIP lá dentro, chama a função de novo
+                    # RECURSÃO: Se achar outro ZIP lá dentro, abre ele também
                     if sub_nome.lower().endswith('.zip'):
                         itens_encontrados.extend(extrair_recursivo(sub_conteudo, sub_nome))
                     # Se for XML, guarda
@@ -193,6 +193,8 @@ def extrair_recursivo(conteudo_zip_ou_xml, nome_arquivo):
 
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
+
+
 
 with st.container():
     m_col1, m_col2 = st.columns(2)
@@ -213,7 +215,7 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📊 O que será obtido?</h3>
             <ul>
-                <li><b>Garimpo Profundo:</b> Abertura de pastas e ZIPS dentro de outros ZIPS.</li>
+                <li><b>Mergulho Profundo:</b> Extração de XMLs em infinitos níveis de pastas e ZIPS.</li>
                 <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês de emissão.</li>
                 <li><b>Hierarquia Fiscal:</b> Separação por Emitente, Modelo, Status e Série.</li>
                 <li><b>Peneira de Sequência:</b> Auditoria completa do lote (Início ao Fim).</li>
@@ -250,13 +252,13 @@ if st.session_state['confirmado']:
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
             p_keys, rel_list, audit_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            with st.status("⛏️ Mergulhando nas profundezas das pastas...", expanded=True):
+            with st.status("⛏️ Mergulhando nas camadas de arquivos...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
                     for f in uploaded_files:
                         f_bytes = f.read()
-                        # CHAMADA RECURSIVA: Abre ZIPS dentro de ZIPS
+                        # CHAMADA DA FUNÇÃO RECURSIVA PARA ABRIR TUDO
                         todos_xmls = extrair_recursivo(f_bytes, f.name)
                         
                         for name, xml_data in todos_xmls:
@@ -283,7 +285,7 @@ if st.session_state['confirmado']:
             for (t, s), dados in audit_map.items():
                 ns = dados["nums"]
                 if ns:
-                    n_min, n_max = min(ns), max(ns)
+                    n_min, n_max = min(ns), max(ns) # CAPTURA O INÍCIO E FIM REAIS DO LOTE
                     res_final.append({
                         "Documento": t, "Série": s, "Início": n_min, "Fim": n_max, 
                         "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)
