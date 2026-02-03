@@ -5,113 +5,45 @@ import os
 import re
 import pandas as pd
 import random
-import gc # Importante para limpar memória
+import gc
 
-# --- CONFIGURAÇÃO E ESTILO (CLONE ABSOLUTO DO DIAMOND TAX) ---
+# --- CONFIGURAÇÃO E ESTILO ---
 st.set_page_config(page_title="O GARIMPEIRO | Premium Edition", layout="wide", page_icon="⛏️")
 
 def aplicar_estilo_premium():
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&family=Plus+Jakarta+Sans:wght@400;700&display=swap');
-
         header, [data-testid="stHeader"] { display: none !important; }
-        .stApp { 
-            background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; 
-        }
-
-        [data-testid="stSidebar"] {
-            background-color: #FFFFFF !important;
-            border-right: 1px solid #FFDEEF !important;
-            min-width: 400px !important;
-            max-width: 400px !important;
-        }
-
-        div.stButton > button {
-            color: #6C757D !important; 
-            background-color: #FFFFFF !important; 
-            border: 1px solid #DEE2E6 !important;
-            border-radius: 15px !important;
-            font-family: 'Montserrat', sans-serif !important;
-            font-weight: 800 !important;
-            height: 60px !important;
-            text-transform: uppercase;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            width: 100% !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-        }
-
-        div.stButton > button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 10px 20px rgba(255,105,180,0.2) !important;
-            border-color: #FF69B4 !important;
-            color: #FF69B4 !important;
-        }
-
-        [data-testid="stFileUploader"] { 
-            border: 2px dashed #FF69B4 !important; 
-            border-radius: 20px !important;
-            background: #FFFFFF !important;
-            padding: 20px !important;
-        }
-
-        div.stDownloadButton > button {
-            background-color: #FF69B4 !important; 
-            color: white !important; 
-            border: 2px solid #FFFFFF !important;
-            font-weight: 700 !important;
-            border-radius: 15px !important;
-            box-shadow: 0 0 15px rgba(255, 105, 180, 0.3) !important;
-            text-transform: uppercase;
-            width: 100% !important;
-        }
-
-        h1, h2, h3 {
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 800;
-            color: #FF69B4 !important;
-            text-align: center;
-        }
-
-        .instrucoes-card {
-            background-color: rgba(255, 255, 255, 0.7);
-            border-radius: 15px;
-            padding: 20px;
-            border-left: 5px solid #FF69B4;
-            margin-bottom: 20px;
-            min-height: 280px;
-        }
-
-        [data-testid="stMetric"] {
-            background: white !important;
-            border-radius: 20px !important;
-            border: 1px solid #FFDEEF !important;
-            padding: 15px !important;
-        }
+        .stApp { background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; }
+        [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #FFDEEF !important; min-width: 400px !important; }
+        div.stButton > button { color: #6C757D !important; background-color: #FFFFFF !important; border: 1px solid #DEE2E6 !important; border-radius: 15px !important; font-family: 'Montserrat', sans-serif !important; font-weight: 800 !important; height: 60px !important; text-transform: uppercase; width: 100% !important; box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important; }
+        div.stButton > button:hover { transform: translateY(-5px) !important; box-shadow: 0 10px 20px rgba(255,105,180,0.2) !important; border-color: #FF69B4 !important; color: #FF69B4 !important; }
+        [data-testid="stFileUploader"] { border: 2px dashed #FF69B4 !important; border-radius: 20px !important; background: #FFFFFF !important; padding: 20px !important; }
+        div.stDownloadButton > button { background-color: #FF69B4 !important; color: white !important; border: 2px solid #FFFFFF !important; font-weight: 700 !important; border-radius: 15px !important; box-shadow: 0 0 15px rgba(255, 105, 180, 0.3) !important; text-transform: uppercase; width: 100% !important; }
+        h1, h2, h3 { font-family: 'Montserrat', sans-serif; font-weight: 800; color: #FF69B4 !important; text-align: center; }
+        .instrucoes-card { background-color: rgba(255, 255, 255, 0.7); border-radius: 15px; padding: 20px; border-left: 5px solid #FF69B4; margin-bottom: 20px; min-height: 280px; }
+        [data-testid="stMetric"] { background: white !important; border-radius: 20px !important; border: 1px solid #FFDEEF !important; padding: 15px !important; }
         </style>
     """, unsafe_allow_html=True)
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO ÍNTEGRO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
     if nome_puro.startswith('.') or nome_puro.startswith('~') or not nome_puro.lower().endswith('.xml'):
         return None, False
     
-    resumo = {
-        "Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0",
-        "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS",
-        "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00"
-    }
+    resumo = {"Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0", "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS", "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00"}
     
     try:
         content_str = content_bytes[:45000].decode('utf-8', errors='ignore')
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<inut' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # 1. IDENTIFICAÇÃO DE INUTILIZADAS
+        # 1. INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
             if '<mod>65</mod>' in tag_l: resumo["Tipo"] = "NFC-e"
@@ -120,19 +52,16 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             resumo["Série"] = re.search(r'<serie>(\d+)</', tag_l).group(1) if re.search(r'<serie>(\d+)</', tag_l) else "0"
             ini = re.search(r'<nnfini>(\d+)</', tag_l).group(1) if re.search(r'<nnfini>(\d+)</', tag_l) else "0"
             fin = re.search(r'<nnffin>(\d+)</', tag_l).group(1) if re.search(r'<nnffin>(\d+)</', tag_l) else ini
-            
             resumo["Número"] = int(ini)
             resumo["Range"] = (int(ini), int(fin))
             resumo["Ano"] = "20" + re.search(r'<ano>(\d+)</', tag_l).group(1)[-2:] if re.search(r'<ano>(\d+)</', tag_l) else "0000"
             resumo["Chave"] = f"INUT_{resumo['Série']}_{ini}"
 
         else:
+            # 2. CHAVE DE ACESSO
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
-            if not match_ch:
-                match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
-                resumo["Chave"] = match_ch.group(1) if match_ch else ""
-            else:
-                resumo["Chave"] = match_ch.group(1)
+            if not match_ch: match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
+            resumo["Chave"] = match_ch.group(1) if match_ch else ""
 
             if resumo["Chave"]:
                 resumo["Ano"], resumo["Mes"] = "20" + resumo["Chave"][2:4], resumo["Chave"][4:6]
@@ -144,30 +73,25 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 
             tipo = "NF-e"
             if '<mod>65</mod>' in tag_l: tipo = "NFC-e"
-            elif '<mod>57</mod>' in tag_l or '<infcte' in tag_l: tipo = "CT-e"
-            elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
+            elif '<mod>57</mod>' in tag_l: tipo = "CT-e"
+            elif '<mod>58</mod>' in tag_l: tipo = "MDF-e"
             
+            # 3. CANCELADAS (Só código 110111 ou cStat 101)
             status = "NORMAIS"
-            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
-                status = "CANCELADOS"
+            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: status = "CANCELADOS"
             elif '110110' in tag_l: status = "CARTA_CORRECAO"
                 
             resumo["Tipo"], resumo["Status"] = tipo, status
-
             if status == "NORMAIS":
                 v_match = re.search(r'<(?:vnf|vtprest|vreceb)>([\d.]+)</', tag_l)
                 resumo["Valor"] = float(v_match.group(1)) if v_match else 0.0
             
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
-        if not cnpj_emit and resumo["Chave"] and not resumo["Chave"].startswith("INUT_"): 
-            cnpj_emit = resumo["Chave"][6:20]
+        if not cnpj_emit and resumo["Chave"] and not resumo["Chave"].startswith("INUT_"): cnpj_emit = resumo["Chave"][6:20]
         
         is_p = (cnpj_emit == client_cnpj_clean)
-        
-        if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
-        else:
-            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
+        if is_p: resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+        else: resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
             
         return resumo, is_p
     except: return None, False
@@ -180,14 +104,13 @@ def extrair_recursivo(conteudo_bytes, nome_arquivo):
             with zipfile.ZipFile(io.BytesIO(conteudo_bytes)) as z:
                 for sub_nome in z.namelist():
                     if sub_nome.startswith('__MACOSX') or os.path.basename(sub_nome).startswith('.'): continue
-                    sub_conteudo = z.read(sub_nome)
-                    if sub_nome.lower().endswith('.zip'):
-                        itens.extend(extrair_recursivo(sub_conteudo, sub_nome))
-                    elif sub_nome.lower().endswith('.xml'):
-                        itens.append((os.path.basename(sub_nome), sub_conteudo))
+                    try:
+                        sub_conteudo = z.read(sub_nome)
+                        if sub_nome.lower().endswith('.zip'): itens.extend(extrair_recursivo(sub_conteudo, sub_nome))
+                        elif sub_nome.lower().endswith('.xml'): itens.append((os.path.basename(sub_nome), sub_conteudo))
+                    except: pass
         except: pass
-    elif nome_arquivo.lower().endswith('.xml'):
-        itens.append((os.path.basename(nome_arquivo), conteudo_bytes))
+    elif nome_arquivo.lower().endswith('.xml'): itens.append((os.path.basename(nome_arquivo), conteudo_bytes))
     return itens
 
 # --- INTERFACE ---
@@ -196,30 +119,9 @@ st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 with st.container():
     m_col1, m_col2 = st.columns(2)
     with m_col1:
-        st.markdown("""
-        <div class="instrucoes-card">
-            <h3>📖 Instruções de Uso</h3>
-    <ul>
-        <li><b>Fonte de Dados:</b> O sistema aceita arquivos <b>XML</b> individuais ou pacotes <b>ZIP</b>. </li>
-        <li><b>Identificação Fiscal:</b> A Série e o Número são extraídos diretamente da <b>Chave de Acesso (44 dígitos)</b>. Isso garante que, em eventos de cancelamento, o número lido seja o da nota de referência e não o do protocolo.</li>
-        <li><b>Critério de Saída (Emitidos):</b> Documentos onde o CNPJ do emitente coincide com o CNPJ configurado são classificados como <b>EMITIDOS</b>.</li>
-        <li><b>Critério de Entrada (Terceiros):</b> Documentos de outros emitentes destinados ao CNPJ configurado são classificados como <b>RECEBIDOS</b>.</li>
-        <li><b>Regra de Prevalência:</b> Se o lote contiver a nota autorizada e o seu respectivo cancelamento, o sistema prioriza o status <b>CANCELADO</b> para a auditoria.</li>
-    </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📖 Instruções</h3><ul><li><b>Fonte:</b> XML ou ZIP.</li><li><b>Identificação:</b> Chave ou Inutilização.</li><li><b>Critério:</b> CNPJ Emitente vs Configurado.</li></ul></div>""", unsafe_allow_html=True)
     with m_col2:
-        st.markdown("""
-        <div class="instrucoes-card">
-            <h3>📊 O que será obtido?</h3>
-            <ul>
-                <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
-                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
-                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
-                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas e notas inutilizadas.</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📊 Resultados</h3><ul><li><b>Garimpo Profundo:</b> Recursivo.</li><li><b>Organização:</b> Cronológica e por Status.</li><li><b>Auditoria:</b> Buracos, Canceladas, Inutilizadas.</li></ul></div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -236,12 +138,9 @@ with st.sidebar:
     st.markdown("### 🔍 Configuração")
     cnpj_input = st.text_input("CNPJ DO CLIENTE", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, cnpj_input))
-    if cnpj_input and len(cnpj_limpo) != 14: st.error("⚠️ CNPJ Inválido.")
     if len(cnpj_limpo) == 14:
         if st.button("✅ LIBERAR OPERAÇÃO"): st.session_state['confirmado'] = True
-    st.divider()
-    if st.button("🗑️ RESETAR SISTEMA"):
-        st.session_state.clear(); st.rerun()
+    if st.button("🗑️ RESETAR SISTEMA"): st.session_state.clear(); st.rerun()
 
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
@@ -250,7 +149,6 @@ if st.session_state['confirmado']:
             lote_dict = {}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            # --- STATUS VISUAL E OTIMIZAÇÃO ---
             progresso_bar = st.progress(0)
             status_text = st.empty()
             total_arquivos = len(uploaded_files)
@@ -260,20 +158,18 @@ if st.session_state['confirmado']:
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
                     for i, f in enumerate(uploaded_files):
-                        # Limpeza de Memória a cada 100 arquivos (Evita travamento por RAM)
-                        if i % 100 == 0:
-                            gc.collect()
+                        # GESTÃO DE MEMÓRIA: Limpa RAM a cada 50 arquivos
+                        if i % 50 == 0: gc.collect()
                         
-                        # Atualiza barra apenas a cada 1% (Evita travamento do navegador)
-                        if total_arquivos > 0 and i % max(1, int(total_arquivos * 0.01)) == 0:
+                        # Atualiza barra de progresso a cada 2% para não travar o navegador
+                        if total_arquivos > 0 and i % max(1, int(total_arquivos * 0.02)) == 0:
                             progresso_bar.progress((i + 1) / total_arquivos)
-                            status_text.text(f"⛏️ Processando arquivo {i+1}/{total_arquivos}: {f.name}")
+                            status_text.text(f"⛏️ Processando: {f.name}")
                         
                         try:
-                            # Leitura direta do ponteiro do arquivo
-                            f.seek(0)
-                            content = f.read()
+                            content = f.read() # Lê o arquivo
                             todos_xmls = extrair_recursivo(content, f.name)
+                            del content # Libera memória imediatamente
                             
                             for name, xml_data in todos_xmls:
                                 res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
@@ -284,12 +180,11 @@ if st.session_state['confirmado']:
                                     else:
                                         lote_dict[key] = (res, is_p)
                                         z_org.writestr(f"{res['Pasta']}/{name}", xml_data); z_todos.writestr(name, xml_data)
-                        except Exception:
-                            continue # Pula arquivo corrompido sem travar
-                
-                status_box.update(label="✅ Garimpo Concluído!", state="complete", expanded=False)
-                progresso_bar.empty()
-                status_text.empty()
+                            del todos_xmls # Libera lista de XMLs extraídos
+                        except: continue
+
+                status_box.update(label="✅ Concluído!", state="complete", expanded=False)
+                progresso_bar.empty(); status_text.empty()
 
             rel_list, audit_map, canc_list, inut_list = [], {}, [], []
             for k, (res, is_p) in lote_dict.items():
@@ -314,63 +209,47 @@ if st.session_state['confirmado']:
             for (t, s), dados in audit_map.items():
                 ns = sorted(list(dados["nums"]))
                 if ns:
-                    n_min, n_max = ns[0], ns[-1]
-                    res_final.append({"Documento": t, "Série": s, "Início": n_min, "Fim": n_max, "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
-                    for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
+                    res_final.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Qtde": len(ns), "Valor": round(dados["valor"], 2)})
+                    for b in sorted(list(set(range(ns[0], ns[-1] + 1)) - set(ns))):
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
             st_counts = {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list)}
-
             st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
-        c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
-        c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
+        c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
+        c2.metric("❌ CANCELADAS", sc["CANCELADOS"])
+        c3.metric("🚫 INUTILIZADAS", sc["INUTILIZADOS"])
         
-        st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
-        
         st.markdown("---")
         col_audit, col_canc, col_inut = st.columns(3)
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            if not st.session_state['df_faltantes'].empty:
-                st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-            else:
-                st.info("✅ Tudo em ordem.")
-
+            if not st.session_state['df_faltantes'].empty: st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+            else: st.info("✅ OK")
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            if not st.session_state['df_canceladas'].empty:
-                st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
-            else:
-                st.info("ℹ️ Nenhuma nota.")
-
+            if not st.session_state['df_canceladas'].empty: st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+            else: st.info("ℹ️ Nenhuma")
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            if not st.session_state['df_inutilizadas'].empty:
-                st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
-            else:
-                st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_inutilizadas'].empty: st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
+            else: st.info("ℹ️ Nenhuma")
 
         st.divider()
-        
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
-            st.session_state['df_resumo'].to_excel(writer, sheet_name='Resumo', index=False)
-            st.session_state['df_faltantes'].to_excel(writer, sheet_name='Buracos', index=False)
-            st.session_state['df_canceladas'].to_excel(writer, sheet_name='Canceladas', index=False)
-            st.session_state['df_inutilizadas'].to_excel(writer, sheet_name='Inutilizadas', index=False)
+            for nome, df in [('Resumo', 'df_resumo'), ('Buracos', 'df_faltantes'), ('Canceladas', 'df_canceladas'), ('Inutilizadas', 'df_inutilizadas')]:
+                st.session_state[df].to_excel(writer, sheet_name=nome, index=False)
 
-        col1, col2, col3 = st.columns(3)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
-        with col3: st.download_button("📊 RELATÓRIO EXCEL", buffer_excel.getvalue(), "relatorio_auditoria.xlsx", use_container_width=True, mime="application/vnd.ms-excel")
+        c1, c2, c3 = st.columns(3)
+        with c1: st.download_button("📂 ZIP ORGANIZADO", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
+        with c2: st.download_button("📦 ZIP COMPLETO", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        with c3: st.download_button("📊 RELATÓRIO EXCEL", buffer_excel.getvalue(), "relatorio.xlsx", use_container_width=True)
         
-        if st.button("⛏️ NOVO GARIMPO"):
-            st.session_state.clear(); st.rerun()
+        if st.button("⛏️ NOVO GARIMPO"): st.session_state.clear(); st.rerun()
 else:
     st.warning("👈 Insira o CNPJ na barra lateral para começar.")
