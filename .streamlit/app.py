@@ -110,7 +110,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<inutnfe' not in tag_l and '<retinutnfe' not in tag_l: return None, False
         
-        # 1. IDENTIFICAÇÃO DE INUTILIZADAS (Prioridade para evitar falsos positivos de cancelamento)
+        # 1. IDENTIFICAÇÃO DE INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
             if '<mod>65</mod>' in tag_l: resumo["Tipo"] = "NFC-e"
@@ -120,12 +120,12 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             ini = re.search(r'<nnfini>(\d+)</', tag_l).group(1) if re.search(r'<nnfini>(\d+)</', tag_l) else "0"
             fin = re.search(r'<nnffin>(\d+)</', tag_l).group(1) if re.search(r'<nnffin>(\d+)</', tag_l) else ini
             resumo["Número"] = int(ini)
-            resumo["Range"] = (int(ini), int(fin)) # Salva o intervalo da inutilização
+            resumo["Range"] = (int(ini), int(fin))
             resumo["Ano"] = "20" + re.search(r'<ano>(\d+)</', tag_l).group(1) if re.search(r'<ano>(\d+)</', tag_l) else "0000"
             resumo["Chave"] = f"INUT_{resumo['Série']}_{ini}_{fin}"
 
         else:
-            # 2. BUSCA DA CHAVE DE REFERÊNCIA (Notas Normais e Eventos)
+            # 2. BUSCA DA CHAVE DE REFERÊNCIA
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
                 match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
@@ -146,7 +146,6 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             elif '<mod>57</mod>' in tag_l or '<infcte' in tag_l: tipo = "CT-e"
             elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
             
-            # 3. IDENTIFICAÇÃO DE CANCELADAS (Uso de códigos fiscais específicos, nunca busca de texto genérico)
             status = "NORMAIS"
             if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
                 status = "CANCELADOS"
@@ -247,7 +246,7 @@ if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("Arraste seus arquivos aqui:", accept_multiple_files=True)
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            lote_dict, st_counts = {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
+            lote_dict = {}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
             with st.status("⛏️ Minerando...", expanded=True):
@@ -270,24 +269,18 @@ if st.session_state['confirmado']:
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
                 if is_p:
-                    if res["Status"] == "CANCELADOS": st_counts["CANCELADOS"] += 1
-                    elif res["Status"] == "INUTILIZADOS": st_counts["INUTILIZADOS"] += 1
-                    
                     sk = (res["Tipo"], res["Série"])
                     if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0, "canc": set(), "inut": set()}
                     
                     if res["Status"] == "INUTILIZADOS":
-                        # Expande o range para preencher a sequência corretamente
                         ini_r, fin_r = res.get("Range", (res["Número"], res["Número"]))
                         for n in range(ini_r, fin_r + 1):
                             audit_map[sk]["nums"].add(n)
-                            audit_map[sk]["inut"].add(n)
                             inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": n})
                     else:
                         if res["Número"] > 0:
                             audit_map[sk]["nums"].add(res["Número"])
                             if res["Status"] == "CANCELADOS":
-                                audit_map[sk]["canc"].add(res["Número"])
                                 canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
                             audit_map[sk]["valor"] += res["Valor"]
 
@@ -300,7 +293,20 @@ if st.session_state['confirmado']:
                     for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
+            # INTEGRIDADE: O totalizador agora conta exatamente o que está nas listas dos quadros
+            st_counts = {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list)}
+
+            st.session_state.update({
+                'z_org': buf_org.getvalue(), 
+                'z_todos': buf_todos.getvalue(), 
+                'relatorio': rel_list, 
+                'df_resumo': pd.DataFrame(res_final), 
+                'df_faltantes': pd.DataFrame(fal_final), 
+                'df_canceladas': pd.DataFrame(canc_list), 
+                'df_inutilizadas': pd.DataFrame(inut_list), 
+                'st_counts': st_counts, 
+                'garimpo_ok': True
+            })
             st.rerun()
     else:
         st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
