@@ -92,7 +92,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FISCAL DE CHAVE DE REFERÊNCIA) ---
+# --- MOTOR DE IDENTIFICAÇÃO (EXTREMA PRECISÃO FISCAL) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -110,23 +110,21 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l: return None, False
         
-        # BUSCA DA CHAVE REAL (Evita pegar o ID do evento que tem números a mais)
-        # Procuramos especificamente pela tag de chave de referência (chNFe, chCTe, etc)
+        # BUSCA DA CHAVE DE REFERÊNCIA (Essencial para Cancelamentos)
+        # Procuramos primeiro a tag <chNFe>, <chCTe> etc, que indica a nota real do evento
         match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
         if not match_ch:
-            # Se não for evento, busca o padrão de nota normal (Id="NFe...")
+            # Se não for evento, busca o Id padrão da nota
             match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
-            if match_ch:
-                resumo["Chave"] = match_ch.group(1)
-            else:
-                # Fallback para busca genérica de 44 dígitos se nada acima funcionar
-                match_gen = re.search(r'(\d{44})', content_str)
-                resumo["Chave"] = match_gen.group(0) if match_gen else ""
+            resumo["Chave"] = match_ch.group(1) if match_ch else ""
         else:
             resumo["Chave"] = match_ch.group(1)
-        
+
         if resumo["Chave"]:
             resumo["Ano"], resumo["Mes"] = "20" + resumo["Chave"][2:4], resumo["Chave"][4:6]
+            # EXTRAÇÃO FISCAL PADRÃO DA CHAVE (Série 23-25, Nota 26-34)
+            resumo["Série"] = str(int(resumo["Chave"][22:25]))
+            resumo["Número"] = int(resumo["Chave"][25:34])
         else:
             data_match = re.search(r'<(?:dhemi|dhregevento)>(\d{4})-(\d{2})', tag_l)
             if data_match: resumo["Ano"], resumo["Mes"] = data_match.group(1), data_match.group(2)
@@ -139,26 +137,18 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         status = "NORMAIS"
         if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: status = "CANCELADOS"
         elif '110110' in tag_l: status = "CARTA_CORRECAO"
-        elif '<inutnfe' in tag_l or '<procinut' in tag_l or '<inutcte' in tag_l:
+        elif '<inutnfe' in tag_l or '<procinut' in tag_l:
             status, tipo = "INUTILIZADOS", "Inutilizacoes"
             
         resumo["Tipo"], resumo["Status"] = tipo, status
 
-        # EXTRAÇÃO PRECISA VIA CHAVE DE REFERÊNCIA
-        if len(resumo["Chave"]) == 44:
-            resumo["Série"] = str(int(resumo["Chave"][22:25]))
-            resumo["Número"] = int(resumo["Chave"][25:34])
-        else:
-            resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
-            n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini|ninfini)>(\d+)</', tag_l)
-            resumo["Número"] = int(n_match.group(1)) if n_match else 0
-        
         if status == "NORMAIS":
             v_match = re.search(r'<(?:vnf|vtprest|vreceb)>([\d.]+)</', tag_l)
             resumo["Valor"] = float(v_match.group(1)) if v_match else 0.0
             
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         if not cnpj_emit and resumo["Chave"]: cnpj_emit = resumo["Chave"][6:20]
+        
         is_p = (cnpj_emit == client_cnpj_clean)
         
         if is_p:
@@ -169,7 +159,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         return resumo, is_p
     except: return None, False
 
-# --- FUNÇÃO RECURSIVA PARA MERGULHAR EM PASTAS E ZIPS ---
+# --- FUNÇÃO RECURSIVA ---
 def extrair_recursivo(conteudo_bytes, nome_arquivo):
     itens = []
     if nome_arquivo.lower().endswith('.zip'):
@@ -189,6 +179,36 @@ def extrair_recursivo(conteudo_bytes, nome_arquivo):
 
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
+
+# BLOCO DO MANUAL DE INSTRUÇÕES (REINTEGRADO)
+with st.container():
+    m_col1, m_col2 = st.columns(2)
+    with m_col1:
+        st.markdown("""
+        <div class="instrucoes-card">
+            <h3>📖 Passo a Passo</h3>
+            <ol>
+                <li><b>Arquivos:</b> Arraste seus arquivos XML ou pastas ZIP (mesmo com ZIPS internos).</li>
+                <li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li>
+                <li><b>Auditoria:</b> O sistema checa buracos na numeração entre o menor e maior número.</li>
+                <li><b>Download:</b> Baixe o ZIP organizado por <b>Emitido/Recebido</b> e <b>Ano/Mês</b>.</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
+    with m_col2:
+        st.markdown("""
+        <div class="instrucoes-card">
+            <h3>📊 O que será obtido?</h3>
+            <ul>
+                <li><b>Garimpo Profundo:</b> Abertura de pastas e ZIPS dentro de outros ZIPS.</li>
+                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês de emissão.</li>
+                <li><b>Hierarquia Fiscal:</b> Separação por Emitente, Modelo, Status e Série.</li>
+                <li><b>Peneira de Sequência:</b> Auditoria completa do lote (Início ao Fim).</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown("---")
 
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'st_counts']
 for k in keys_to_init:
@@ -217,10 +237,9 @@ if st.session_state['confirmado']:
             p_keys, rel_list, audit_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             canc_list = []
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            with st.status("⛏️ Minerando jazida profunda...", expanded=True):
+            with st.status("⛏️ Minerando...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
-                    
                     for f in uploaded_files:
                         todos_xmls = extrair_recursivo(f.read(), f.name)
                         for name, xml_data in todos_xmls:
