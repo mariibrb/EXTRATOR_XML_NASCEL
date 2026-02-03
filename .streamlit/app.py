@@ -107,18 +107,23 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
     try:
         content_str = content_bytes[:45000].decode('utf-8', errors='ignore')
         tag_l = content_str.lower()
-        if '<?xml' not in tag_l and '<inf' not in tag_l and '<retinut' not in tag_l: return None, False
+        if '<?xml' not in tag_l and '<inf' not in tag_l and '<inutnfe' not in tag_l and '<retinutnfe' not in tag_l: return None, False
         
-        # 1. VALIDAÇÃO DE INUTILIZAÇÃO (Identifica nota 5039)
+        # 1. TRATAMENTO DE INUTILIZAÇÃO (Lê nota 5058 do seu XML de Pedido ou Retorno)
         if '<inut' in tag_l or '<retinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
-            resumo["Série"] = re.search(r'<serie>(\d+)</', tag_l).group(1) if re.search(r'<serie>(\d+)</', tag_l) else "0"
-            resumo["Número"] = int(re.search(r'<nnfini>(\d+)</', tag_l).group(1)) if re.search(r'<nnfini>(\d+)</', tag_l) else 0
-            resumo["Ano"] = "20" + re.search(r'<ano>(\d{2})</', tag_l).group(1) if re.search(r'<ano>(\d{2})</', tag_l) else "0000"
+            s_match = re.search(r'<serie>(\d+)</', tag_l)
+            resumo["Série"] = s_match.group(1) if s_match else "0"
+            n_match = re.search(r'<nnfini>(\d+)</', tag_l)
+            resumo["Número"] = int(n_match.group(1)) if n_match else 0
+            # Gera Chave Sintética para Auditoria
             resumo["Chave"] = f"INUT_{resumo['Série']}_{resumo['Número']}"
-        
+            ano_match = re.search(r'<ano>(\d{2,4})</', tag_l)
+            resumo["Ano"] = ano_match.group(1) if ano_match else "0000"
+            if len(resumo["Ano"]) == 2: resumo["Ano"] = "20" + resumo["Ano"]
+            
         else:
-            # BUSCA DA CHAVE DE REFERÊNCIA
+            # 2. BUSCA PADRÃO VIA CHAVE
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
                 match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
@@ -140,8 +145,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
             
             status = "NORMAIS"
-            # 2. EVENTO DE CANCELAMENTO
-            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: 
+            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
                 status = "CANCELADOS"
             elif '110110' in tag_l: status = "CARTA_CORRECAO"
                 
@@ -184,9 +188,9 @@ st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 with st.container():
     m_col1, m_col2 = st.columns(2)
     with m_col1:
-        st.markdown("""<div class="instrucoes-card"><h3>📖 Instruções de Uso</h3><ul><li><b>Identificação Fiscal:</b> A Série e o Número são extraídos da <b>Chave de Acesso</b> ou tags de inutilização.</li><li><b>Critério de Saída (Emitidos):</b> Documentos onde o CNPJ do emitente coincide com o CNPJ configurado.</li><li><b>Regra de Prevalência:</b> Inutilizações e Cancelamentos preenchem a sequência numérica e não geram buracos.</li></ul></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📖 Instruções de Uso</h3><ul><li><b>Identificação Fiscal:</b> A Série e o Número são extraídos da <b>Chave de Acesso</b> ou de tags de <b>Inutilização</b>.</li><li><b>Critério de Saída (Emitidos):</b> Documentos onde o CNPJ emitente coincide com o configurado.</li><li><b>Regra de Prevalência:</b> Inutilizações e Cancelamentos preenchem a sequência numérica e limpam os buracos.</li></ul></div>""", unsafe_allow_html=True)
     with m_col2:
-        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>ZIP Organizado:</b> Pastas estruturadas por Emitente, Modelo e Status.</li><li><b>Peneira em 3 Colunas:</b> Auditoria visual de buracos, canceladas e inutilizadas.</li></ul></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>Garimpo Profundo:</b> Extração recursiva de ZIPs.</li><li><b>Dashboard em 3 Colunas:</b> Auditoria real de buracos, canceladas e inutilizadas.</li><li><b>Organização Total:</b> Pastas estruturadas por Ano/Mês e Status.</li></ul></div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -228,49 +232,46 @@ if st.session_state['confirmado']:
                 if is_p:
                     if res["Status"] == "CANCELADOS": st_counts["CANCELADOS"] += 1
                     elif res["Status"] == "INUTILIZADOS": st_counts["INUTILIZADOS"] += 1
-                    
                     if res["Número"] > 0:
                         if res["Status"] == "CANCELADOS": canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
-                        elif res["Status"] == "INUTILIZADOS": inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
-                        
-                        sk = (res["Tipo"], res["Série"])
+                        elif res["Status"] == "INUTILIZADOS": inut_list.append({"Modelo": "NF-e", "Série": res["Série"], "Nota": res["Número"]})
+                        # Ocupa a sequência na auditoria
+                        sk = ("NF-e" if res["Tipo"] == "Inutilizacoes" else res["Tipo"], res["Série"])
                         if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                         audit_map[sk]["nums"].add(res["Número"]); audit_map[sk]["valor"] += res["Valor"]
 
-            res_final, fal_final = [], []
-            for (t, s), dados in audit_map.items():
-                ns = sorted(list(dados["nums"]))
+            res_f, fal_f = [], []
+            for (t, s), d in audit_map.items():
+                ns = sorted(list(d["nums"]))
                 if ns:
-                    res_final.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Qtde": len(ns), "Valor": round(dados["valor"], 2)})
+                    res_f.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Qtde": len(ns), "Valor Contábil": round(d["valor"], 2)})
                     for b in sorted(list(set(range(ns[0], ns[-1] + 1)) - set(ns))):
-                        fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
+                        fal_f.append({"Tipo": t, "Série": s, "Faltante": b})
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
+            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_f), 'df_faltantes': pd.DataFrame(fal_f), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME", len(st.session_state['relatorio']))
+        c1.metric("📦 VOLUME CLIENTE", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc["CANCELADOS"])
         c3.metric("🚫 INUTILIZADAS", sc["INUTILIZADOS"])
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         st.markdown("---")
-        # --- QUADROS LADO A LADO: BURACO > CANCELADA > INUTILIZADA ---
         col_audit, col_canc, col_inut = st.columns(3)
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ OK")
+            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ Tudo em ordem.")
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma")
+            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma nota.")
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma")
-
+            st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma nota.")
         st.divider()
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 ZIP ORGANIZADO", st.session_state['z_org'], "organizado.zip")
-        with col2: st.download_button("📦 TODOS XML", st.session_state['z_todos'], "todos_xml.zip")
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
+        with col2: st.download_button("📦 BAIXAR TODOS", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
         if st.button("⛏️ NOVO GARIMPO"): st.session_state.clear(); st.rerun()
 else:
     st.warning("👈 Insira o CNPJ na barra lateral para começar.")
