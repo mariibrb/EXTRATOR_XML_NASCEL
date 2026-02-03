@@ -92,7 +92,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINO MULTI-MODELO E CHAVE) ---
+# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINO POSIÇÕES DA CHAVE) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -125,16 +125,20 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
         
         status = "NORMAIS"
-        if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: status = "CANCELADOS"
-        elif '110110' in tag_l: status = "CARTA_CORRECAO"
-        elif '<inutnfe' in tag_l or '<procinut' in tag_l or '<inutcte' in tag_l:
+        if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: 
+            status = "CANCELADOS"
+        elif '110110' in tag_l: 
+            status = "CARTA_CORRECAO"
+        elif '<inutnfe' in tag_l or '<procinut' in tag_l:
             status, tipo = "INUTILIZADOS", "Inutilizacoes"
             
         resumo["Tipo"], resumo["Status"] = tipo, status
 
-        # AJUSTE: Extração precisa de Número e Série via Chave de Acesso para Canceladas/Inutilizadas
-        if status in ["CANCELADOS", "INUTILIZADOS"] and resumo["Chave"]:
+        # AJUSTE FINÍSSIMO: Extração via Chave para todos os modelos com fatiamento corrigido
+        if resumo["Chave"]:
+            # Posição 23-25 (index 22:25) -> Série
             resumo["Série"] = str(int(resumo["Chave"][22:25]))
+            # Posição 26-34 (index 25:34) -> Número da Nota
             resumo["Número"] = int(resumo["Chave"][25:34])
         else:
             resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
@@ -178,15 +182,6 @@ def extrair_recursivo(conteudo_bytes, nome_arquivo):
 # --- INTERFACE ---
 st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 
-with st.container():
-    m_col1, m_col2 = st.columns(2)
-    with m_col1:
-        st.markdown("""<div class="instrucoes-card"><h3>📖 Passo a Passo</h3><ol><li><b>Arquivos:</b> Arraste XMLs ou ZIPs (com subpastas).</li><li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li><li><b>Auditoria:</b> Sistema checa numeração via Chave de Acesso.</li><li><b>Download:</b> Baixe o ZIP organizado.</li></ol></div>""", unsafe_allow_html=True)
-    with m_col2:
-        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>Extração Total:</b> Abre recursivamente ZIP dentro de ZIP.</li><li><b>Tabelas Extras:</b> Relatórios de notas canceladas e inutilizadas.</li><li><b>Fiscal:</b> Separação automática entre Entrada e Saída.</li><li><b>Auditoria:</b> Relatório de buracos e valores.</li></ul></div>""", unsafe_allow_html=True)
-
-st.markdown("---")
-
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
@@ -214,10 +209,9 @@ if st.session_state['confirmado']:
             p_keys, rel_list, audit_map, st_counts = set(), [], {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             canc_list, inut_list = [], []
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            with st.status("⛏️ Minerando em camadas profundas...", expanded=True):
+            with st.status("⛏️ Minerando jazida profunda...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
-                    
                     for f in uploaded_files:
                         todos_xmls = extrair_recursivo(f.read(), f.name)
                         for name, xml_data in todos_xmls:
@@ -263,7 +257,7 @@ if st.session_state['confirmado']:
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         if not st.session_state['df_faltantes'].empty:
-            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS NO LOTE)")
+            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
         
         c_canc, c_inut = st.columns(2)
