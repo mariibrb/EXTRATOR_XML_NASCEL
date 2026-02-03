@@ -136,10 +136,16 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: 
             status = "CANCELADOS"
         elif '110110' in tag_l: status = "CARTA_CORRECAO"
-        elif '<inutnfe' in tag_l or '<procinut' in tag_l:
+        elif '<inutnfe' in tag_l or '<procinut' in tag_l or '<retinut' in tag_l:
             status, tipo = "INUTILIZADOS", "Inutilizacoes"
             
         resumo["Tipo"], resumo["Status"] = tipo, status
+
+        # Ajuste para capturar número de inutilização se não houver chave de 44 dígitos
+        if not resumo["Chave"] or len(resumo["Chave"]) < 44:
+            resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
+            n_match = re.search(r'<(?:nnf|nct|nmdf|nnfini)>(\d+)</', tag_l)
+            resumo["Número"] = int(n_match.group(1)) if n_match else 0
 
         if status == "NORMAIS":
             v_match = re.search(r'<(?:vnf|vtprest|vreceb)>([\d.]+)</', tag_l)
@@ -199,17 +205,17 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📊 O que será obtido?</h3>
             <ul>
-                <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
-                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
-                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
-                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos e notas canceladas.</li>
+                <li><b>Garimpo Profundo:</b> Abertura de pastas e ZIPS dentro de outros ZIPS.</li>
+                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês de emissão.</li>
+                <li><b>Hierarquia Fiscal:</b> Separação por Emitente, Modelo, Status e Série.</li>
+                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas e inutilizadas.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'st_counts']
+keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
@@ -236,7 +242,7 @@ if st.session_state['confirmado']:
             lote_dict, st_counts = {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando...", expanded=True):
+            with st.status("⛏️ Minerando jazida profunda...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
@@ -247,13 +253,13 @@ if st.session_state['confirmado']:
                             if res:
                                 key = res["Chave"] if res["Chave"] else name
                                 if key in lote_dict:
-                                    if res["Status"] == "CANCELADOS": lote_dict[key] = (res, is_p)
+                                    if res["Status"] in ["CANCELADOS", "INUTILIZADOS"]: lote_dict[key] = (res, is_p)
                                 else:
                                     lote_dict[key] = (res, is_p)
                                     z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
                                     z_todos.writestr(name, xml_data)
 
-            rel_list, audit_map, canc_list = [], {}, []
+            rel_list, audit_map, canc_list, inut_list = [], {}, [], []
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
                 if is_p:
@@ -261,6 +267,8 @@ if st.session_state['confirmado']:
                     if res["Número"] > 0:
                         if res["Status"] == "CANCELADOS":
                             canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota Cancelada": res["Número"]})
+                        elif res["Status"] == "INUTILIZADOS":
+                            inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota Inutilizada": res["Número"]})
                         
                         sk = (res["Tipo"], res["Série"])
                         if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -276,7 +284,7 @@ if st.session_state['confirmado']:
                     for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'st_counts': st_counts, 'garimpo_ok': True})
+            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
         st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
@@ -289,23 +297,30 @@ if st.session_state['confirmado']:
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
-        # --- AJUSTE FINÍSSIMO: QUADROS LADO A LADO ---
+        # --- AJUSTE FINÍSSIMO: QUADROS LADO A LADO (3 COLUNAS) ---
         st.markdown("---")
-        col_audit, col_canc = st.columns(2)
+        col_audit, col_canc, col_inut = st.columns(3)
         
         with col_audit:
-            st.markdown("### ⚠️ BURACOS NA SEQUÊNCIA")
+            st.markdown("### ⚠️ BURACOS")
             if not st.session_state['df_faltantes'].empty:
                 st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
             else:
-                st.info("✅ Nenhuma quebra de sequência detectada.")
+                st.info("✅ Sem buracos.")
 
         with col_canc:
-            st.markdown("### ❌ NOTAS CANCELADAS")
+            st.markdown("### ❌ CANCELADAS")
             if not st.session_state['df_canceladas'].empty:
                 st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
             else:
-                st.info("ℹ️ Nenhuma nota cancelada neste lote.")
+                st.info("ℹ️ Sem canceladas.")
+
+        with col_inut:
+            st.markdown("### 🚫 INUTILIZADAS")
+            if not st.session_state['df_inutilizadas'].empty:
+                st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Sem inutilizadas.")
 
         st.divider()
         col1, col2 = st.columns(2)
