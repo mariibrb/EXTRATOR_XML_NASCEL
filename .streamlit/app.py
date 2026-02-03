@@ -110,7 +110,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l: return None, False
         
-        # AJUSTE PARA PEGAR A CHAVE DA NOTA DE REFERÊNCIA (Evita o Id do evento)
+        # BUSCA DA CHAVE DE REFERÊNCIA (Evita o ID do evento que causava o erro 955001000)
         match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
         if not match_ch:
             match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
@@ -120,7 +120,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
 
         if resumo["Chave"]:
             resumo["Ano"], resumo["Mes"] = "20" + resumo["Chave"][2:4], resumo["Chave"][4:6]
-            # EXTRAÇÃO FISCAL PADRÃO DA CHAVE (Série 23-25, Nota 26-34)
+            # EXTRAÇÃO FISCAL PADRÃO DA CHAVE (Série pos 23-25, Nota pos 26-34)
             resumo["Série"] = str(int(resumo["Chave"][22:25]))
             resumo["Número"] = int(resumo["Chave"][25:34])
         else:
@@ -135,8 +135,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         status = "NORMAIS"
         if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: 
             status = "CANCELADOS"
-        elif '110110' in tag_l: 
-            status = "CARTA_CORRECAO"
+        elif '110110' in tag_l: status = "CARTA_CORRECAO"
         elif '<inutnfe' in tag_l or '<procinut' in tag_l:
             status, tipo = "INUTILIZADOS", "Inutilizacoes"
             
@@ -159,7 +158,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         return resumo, is_p
     except: return None, False
 
-# --- FUNÇÃO RECURSIVA PARA MERGULHAR EM PASTAS E ZIPS ---
+# --- FUNÇÃO RECURSIVA ---
 def extrair_recursivo(conteudo_bytes, nome_arquivo):
     itens = []
     if nome_arquivo.lower().endswith('.zip'):
@@ -187,10 +186,10 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📖 Passo a Passo</h3>
             <ol>
-                <li><b>Arquivos:</b> Arraste seus arquivos XML ou pastas ZIP (mesmo com ZIPS internos).</li>
+                <li><b>Arquivos:</b> Arraste seus arquivos XML ou pastas ZIP.</li>
                 <li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li>
-                <li><b>Auditoria:</b> O sistema checa buracos na numeração entre o menor e maior número.</li>
-                <li><b>Download:</b> Baixe o ZIP organizado por <b>Emitido/Recebido</b> e <b>Ano/Mês</b>.</li>
+                <li><b>Auditoria:</b> O sistema checa buracos na numeração via Chave de Acesso.</li>
+                <li><b>Download:</b> Baixe o ZIP organizado.</li>
             </ol>
         </div>
         """, unsafe_allow_html=True)
@@ -199,10 +198,10 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📊 O que será obtido?</h3>
             <ul>
-                <li><b>Garimpo Profundo:</b> Abertura de pastas e ZIPS dentro de outros ZIPS.</li>
-                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês de emissão.</li>
-                <li><b>Hierarquia Fiscal:</b> Separação por Emitente, Modelo, Status e Série.</li>
-                <li><b>Peneira de Sequência:</b> Auditoria completa do lote (Início ao Fim).</li>
+                <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
+                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
+                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
+                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos e notas canceladas.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -222,7 +221,7 @@ with st.sidebar:
     st.markdown("### 🔍 Configuração")
     cnpj_input = st.text_input("CNPJ DO CLIENTE", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, cnpj_input))
-    if cnpj_input and len(cnpj_limpo) != 14: st.error("⚠️ O CNPJ deve ter 14 números.")
+    if cnpj_input and len(cnpj_limpo) != 14: st.error("⚠️ CNPJ Inválido.")
     if len(cnpj_limpo) == 14:
         if st.button("✅ LIBERAR OPERAÇÃO"): st.session_state['confirmado'] = True
     st.divider()
@@ -233,10 +232,10 @@ if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("Arraste seus arquivos aqui:", accept_multiple_files=True)
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
-            p_keys, lote_dict, st_counts = set(), {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
+            lote_dict, st_counts = {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando jazida profunda...", expanded=True):
+            with st.status("⛏️ Minerando...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
@@ -246,16 +245,13 @@ if st.session_state['confirmado']:
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             if res:
                                 key = res["Chave"] if res["Chave"] else name
-                                # Se encontrar um Cancelamento para uma nota já lida, ele atualiza
                                 if key in lote_dict:
-                                    if res["Status"] == "CANCELADOS":
-                                        lote_dict[key] = (res, is_p)
+                                    if res["Status"] == "CANCELADOS": lote_dict[key] = (res, is_p)
                                 else:
                                     lote_dict[key] = (res, is_p)
                                     z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
                                     z_todos.writestr(name, xml_data)
 
-            # Processamento final do lote unificado
             rel_list, audit_map, canc_list = [], {}, []
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
@@ -263,7 +259,7 @@ if st.session_state['confirmado']:
                     if res["Status"] in st_counts: st_counts[res["Status"]] += 1
                     if res["Número"] > 0:
                         if res["Status"] == "CANCELADOS":
-                            canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Número NF-e": res["Número"]})
+                            canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota Cancelada": res["Número"]})
                         
                         sk = (res["Tipo"], res["Série"])
                         if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -282,20 +278,33 @@ if st.session_state['confirmado']:
             st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos únicos analisados.")
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
+        
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
-        if not st.session_state['df_faltantes'].empty:
-            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS NO LOTE)")
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-        if not st.session_state['df_canceladas'].empty:
-            st.markdown("### ❌ NOTAS CANCELADAS IDENTIFICADAS")
-            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+        
+        # --- AJUSTE FINÍSSIMO: QUADROS LADO A LADO ---
+        st.markdown("---")
+        col_audit, col_canc = st.columns(2)
+        
+        with col_audit:
+            st.markdown("### ⚠️ BURACOS NA SEQUÊNCIA")
+            if not st.session_state['df_faltantes'].empty:
+                st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+            else:
+                st.info("✅ Nenhuma quebra de sequência detectada.")
+
+        with col_canc:
+            st.markdown("### ❌ NOTAS CANCELADAS")
+            if not st.session_state['df_canceladas'].empty:
+                st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Nenhuma nota cancelada neste lote.")
 
         st.divider()
         col1, col2 = st.columns(2)
