@@ -6,93 +6,28 @@ import re
 import pandas as pd
 import random
 
-# --- CONFIGURAÇÃO E ESTILO (CLONE ABSOLUTO DO DIAMOND TAX) ---
+# --- CONFIGURAÇÃO E ESTILO (INTEGRIDADE TOTAL) ---
 st.set_page_config(page_title="O GARIMPEIRO | Premium Edition", layout="wide", page_icon="⛏️")
 
 def aplicar_estilo_premium():
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&family=Plus+Jakarta+Sans:wght@400;700&display=swap');
-
         header, [data-testid="stHeader"] { display: none !important; }
-        .stApp { 
-            background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; 
-        }
-
-        [data-testid="stSidebar"] {
-            background-color: #FFFFFF !important;
-            border-right: 1px solid #FFDEEF !important;
-            min-width: 400px !important;
-            max-width: 400px !important;
-        }
-
-        div.stButton > button {
-            color: #6C757D !important; 
-            background-color: #FFFFFF !important; 
-            border: 1px solid #DEE2E6 !important;
-            border-radius: 15px !important;
-            font-family: 'Montserrat', sans-serif !important;
-            font-weight: 800 !important;
-            height: 60px !important;
-            text-transform: uppercase;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-            width: 100% !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-        }
-
-        div.stButton > button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 10px 20px rgba(255,105,180,0.2) !important;
-            border-color: #FF69B4 !important;
-            color: #FF69B4 !important;
-        }
-
-        [data-testid="stFileUploader"] { 
-            border: 2px dashed #FF69B4 !important; 
-            border-radius: 20px !important;
-            background: #FFFFFF !important;
-            padding: 20px !important;
-        }
-
-        div.stDownloadButton > button {
-            background-color: #FF69B4 !important; 
-            color: white !important; 
-            border: 2px solid #FFFFFF !important;
-            font-weight: 700 !important;
-            border-radius: 15px !important;
-            box-shadow: 0 0 15px rgba(255, 105, 180, 0.3) !important;
-            text-transform: uppercase;
-            width: 100% !important;
-        }
-
-        h1, h2, h3 {
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 800;
-            color: #FF69B4 !important;
-            text-align: center;
-        }
-
-        .instrucoes-card {
-            background-color: rgba(255, 255, 255, 0.7);
-            border-radius: 15px;
-            padding: 20px;
-            border-left: 5px solid #FF69B4;
-            margin-bottom: 20px;
-            min-height: 280px;
-        }
-
-        [data-testid="stMetric"] {
-            background: white !important;
-            border-radius: 20px !important;
-            border: 1px solid #FFDEEF !important;
-            padding: 15px !important;
-        }
+        .stApp { background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; }
+        [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #FFDEEF !important; min-width: 400px !important; }
+        div.stButton > button { color: #6C757D !important; background-color: #FFFFFF !important; border: 1px solid #DEE2E6 !important; border-radius: 15px !important; font-family: 'Montserrat', sans-serif !important; font-weight: 800 !important; height: 60px !important; text-transform: uppercase; width: 100% !important; }
+        div.stButton > button:hover { border-color: #FF69B4 !important; color: #FF69B4 !important; }
+        div.stDownloadButton > button { background-color: #FF69B4 !important; color: white !important; font-weight: 700 !important; border-radius: 15px !important; width: 100% !important; }
+        h1, h2, h3 { font-family: 'Montserrat', sans-serif; font-weight: 800; color: #FF69B4 !important; text-align: center; }
+        .instrucoes-card { background-color: rgba(255, 255, 255, 0.7); border-radius: 15px; padding: 20px; border-left: 5px solid #FF69B4; margin-bottom: 20px; min-height: 280px; }
+        [data-testid="stMetric"] { background: white !important; border-radius: 20px !important; border: 1px solid #FFDEEF !important; padding: 15px !important; }
         </style>
     """, unsafe_allow_html=True)
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (EXTREMA PRECISÃO FISCAL) ---
+# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINO PARA XML DE INUTILIZAÇÃO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -110,19 +45,15 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # 1. TRATAMENTO PRIORITÁRIO PARA INUTILIZAÇÃO (O seu XML real de retorno)
+        # 1. TRATAMENTO DE INUTILIZAÇÃO (XML real enviado nota 5039)
         if '<inut' in tag_l or '<retinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
-            # Pega Série e Número Inicial (ex: 5039) do XML de inutilização
             resumo["Série"] = re.search(r'<serie>(\d+)</', tag_l).group(1) if re.search(r'<serie>(\d+)</', tag_l) else "0"
-            n_match = re.search(r'<nnfini>(\d+)</', tag_l)
-            resumo["Número"] = int(n_match.group(1)) if n_match else 0
-            # Extração de ano para pasta
-            ano_match = re.search(r'<ano>(\d{2})</', tag_l)
-            resumo["Ano"] = "20" + ano_match.group(1) if ano_match else "0000"
+            resumo["Número"] = int(re.search(r'<nnfini>(\d+)</', tag_l).group(1)) if re.search(r'<nnfini>(\d+)</', tag_l) else 0
+            resumo["Ano"] = "20" + re.search(r'<ano>(\d{2})</', tag_l).group(1) if re.search(r'<ano>(\d{2})</', tag_l) else "0000"
             resumo["Chave"] = f"INUT_{resumo['Série']}_{resumo['Número']}"
             
-        # 2. TRATAMENTO PARA NOTAS E EVENTOS VIA CHAVE (NF-e, CT-e, Cancelamentos)
+        # 2. TRATAMENTO PADRÃO VIA CHAVE
         else:
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
@@ -145,33 +76,23 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
             
             status = "NORMAIS"
-            # Identificação rigorosa de cancelamento
-            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
-                status = "CANCELADOS"
-            elif '110110' in tag_l: 
-                status = "CARTA_CORRECAO"
-                
+            if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: status = "CANCELADOS"
+            elif '110110' in tag_l: status = "CARTA_CORRECAO"
+            
             resumo["Tipo"], resumo["Status"] = tipo, status
-
             if status == "NORMAIS":
                 v_match = re.search(r'<(?:vnf|vtprest|vreceb)>([\d.]+)</', tag_l)
                 resumo["Valor"] = float(v_match.group(1)) if v_match else 0.0
-            
-        cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
-        if not cnpj_emit and resumo["Chave"] and not resumo["Chave"].startswith("INUT_"): 
-            cnpj_emit = resumo["Chave"][6:20]
+
+        cnpj_xml = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
+        if not cnpj_xml and resumo["Chave"] and not resumo["Chave"].startswith("INUT_"): cnpj_xml = resumo["Chave"][6:20]
         
-        is_p = (cnpj_emit == client_cnpj_clean)
-        
-        if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
-        else:
-            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
+        is_p = (cnpj_xml == client_cnpj_clean)
+        resumo["Pasta"] = f"{'EMITIDOS_CLIENTE' if is_p else 'RECEBIDOS_TERCEIROS'}/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
             
         return resumo, is_p
     except: return None, False
 
-# --- FUNÇÃO RECURSIVA ---
 def extrair_recursivo(conteudo_bytes, nome_arquivo):
     itens = []
     if nome_arquivo.lower().endswith('.zip'):
@@ -180,13 +101,10 @@ def extrair_recursivo(conteudo_bytes, nome_arquivo):
                 for sub_nome in z.namelist():
                     if sub_nome.startswith('__MACOSX') or os.path.basename(sub_nome).startswith('.'): continue
                     sub_conteudo = z.read(sub_nome)
-                    if sub_nome.lower().endswith('.zip'):
-                        itens.extend(extrair_recursivo(sub_conteudo, sub_nome))
-                    elif sub_nome.lower().endswith('.xml'):
-                        itens.append((os.path.basename(sub_nome), sub_conteudo))
+                    if sub_nome.lower().endswith('.zip'): itens.extend(extrair_recursivo(sub_conteudo, sub_nome))
+                    elif sub_nome.lower().endswith('.xml'): itens.append((os.path.basename(sub_nome), sub_conteudo))
         except: pass
-    elif nome_arquivo.lower().endswith('.xml'):
-        itens.append((os.path.basename(nome_arquivo), conteudo_bytes))
+    elif nome_arquivo.lower().endswith('.xml'): itens.append((os.path.basename(nome_arquivo), conteudo_bytes))
     return itens
 
 # --- INTERFACE ---
@@ -195,28 +113,9 @@ st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 with st.container():
     m_col1, m_col2 = st.columns(2)
     with m_col1:
-        st.markdown("""
-        <div class="instrucoes-card">
-            <h3>📖 Instruções de Uso</h3>
-            <ul>
-                <li><b>Fonte de Dados:</b> Aceita arquivos XML individuais ou pacotes ZIP (mergulho recursivo automático).</li>
-                <li><b>Identificação Fiscal:</b> Série e Número extraídos da <b>Chave de Acesso</b> ou tags de inutilização (ex: nota 5039).</li>
-                <li><b>Filtro de CNPJ:</b> Separa automaticamente <b>Emissão Própria</b> de <b>Terceiros</b>.</li>
-                <li><b>Regra de Prevalência:</b> Cancelamentos e Inutilizações preenchem a sequência numérica na auditoria.</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📖 Instruções de Uso</h3><ul><li><b>Identificação Fiscal:</b> Série e Número extraídos da <b>Chave de Acesso</b> ou tags de inutilização (nota 5039).</li><li><b>Prevalência:</b> Inutilizações e Cancelamentos preenchem a sequência numérica e não geram buracos.</li><li><b>Filtro:</b> Separação automática Emissão Própria vs Terceiros.</li></ul></div>""", unsafe_allow_html=True)
     with m_col2:
-        st.markdown("""
-        <div class="instrucoes-card">
-            <h3>📊 O que será obtido?</h3>
-            <ul>
-                <li><b>ZIP Organizado:</b> Pastas separadas por Emitente, Modelo, Status e Cronologia.</li>
-                <li><b>Painel Lado a Lado:</b> Auditoria confrontando Buracos, Canceladas e Inutilizadas.</li>
-                <li><b>Relatório de Valor:</b> Somatório do valor contábil real por série e modelo.</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>Painel Lado a Lado:</b> Auditoria de buracos, canceladas e inutilizadas.</li><li><b>ZIP Organizado:</b> Estrutura completa de pastas pronta para fiscalização.</li></ul></div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -225,7 +124,6 @@ for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
         elif 'z_' in k: st.session_state[k] = None
-        elif k == 'relatorio': st.session_state[k] = []
         elif k == 'st_counts': st.session_state[k] = {"CANCELADOS": 0, "INUTILIZADOS": 0}
         else: st.session_state[k] = False
 
@@ -233,12 +131,8 @@ with st.sidebar:
     st.markdown("### 🔍 Configuração")
     cnpj_input = st.text_input("CNPJ DO CLIENTE", placeholder="00.000.000/0001-00")
     cnpj_limpo = "".join(filter(str.isdigit, cnpj_input))
-    if cnpj_input and len(cnpj_limpo) != 14: st.error("⚠️ CNPJ Inválido.")
-    if len(cnpj_limpo) == 14:
-        if st.button("✅ LIBERAR OPERAÇÃO"): st.session_state['confirmado'] = True
-    st.divider()
-    if st.button("🗑️ RESETAR SISTEMA"):
-        st.session_state.clear(); st.rerun()
+    if len(cnpj_limpo) == 14 and st.button("✅ LIBERAR OPERAÇÃO"): st.session_state['confirmado'] = True
+    if st.button("🗑️ RESETAR SISTEMA"): st.session_state.clear(); st.rerun()
 
 if st.session_state['confirmado']:
     if not st.session_state['garimpo_ok']:
@@ -246,14 +140,11 @@ if st.session_state['confirmado']:
         if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
             lote_dict, st_counts = {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            
-            with st.status("⛏️ Minerando profunda...", expanded=True):
+            with st.status("⛏️ Minerando...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
-                    
                     for f in uploaded_files:
-                        todos_xmls = extrair_recursivo(f.read(), f.name)
-                        for name, xml_data in todos_xmls:
+                        for name, xml_data in extrair_recursivo(f.read(), f.name):
                             res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                             if res:
                                 key = res["Chave"]
@@ -267,61 +158,49 @@ if st.session_state['confirmado']:
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
                 if is_p:
-                    # CONTAGEM RIGOROSA DE MÉTRICAS
                     if res["Status"] == "CANCELADOS": st_counts["CANCELADOS"] += 1
                     elif res["Status"] == "INUTILIZADOS": st_counts["INUTILIZADOS"] += 1
                     
                     if res["Número"] > 0:
-                        if res["Status"] == "CANCELADOS":
-                            canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
-                        elif res["Status"] == "INUTILIZADOS":
-                            inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
-                        
-                        # Adição ao mapa de auditoria para preencher a sequência
-                        sk = (res["Tipo"], res["Série"])
+                        if res["Status"] == "CANCELADOS": canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
+                        elif res["Status"] == "INUTILIZADOS": inut_list.append({"Modelo": "NF-e", "Série": res["Série"], "Nota": res["Número"]})
+                        sk = ("NF-e" if res["Tipo"] == "Inutilizacoes" else res["Tipo"], res["Série"])
                         if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                         audit_map[sk]["nums"].add(res["Número"]); audit_map[sk]["valor"] += res["Valor"]
 
-            res_final, fal_final = [], []
-            for (t, s), dados in audit_map.items():
-                ns = sorted(list(dados["nums"]))
+            res_f, fal_f = [], []
+            for (t, s), d in audit_map.items():
+                ns = sorted(list(d["nums"]))
                 if ns:
-                    n_min, n_max = ns[0], ns[-1]
-                    res_final.append({"Documento": t, "Série": s, "Início": n_min, "Fim": n_max, "Qtde": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
-                    for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
-                        fal_final.append({"Tipo": t, "Série": s, "Faltante": b})
+                    res_f.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Qtde": len(ns), "Valor Contábil": round(d["valor"], 2)})
+                    for b in sorted(list(set(range(ns[0], ns[-1] + 1)) - set(ns))):
+                        fal_f.append({"Tipo": t, "Série": s, "Faltante": b})
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
+            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_f), 'df_faltantes': pd.DataFrame(fal_f), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos únicos analisados.")
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
-        
-        st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
-        
         st.markdown("---")
-        # --- QUADROS LADO A LADO EM 3 COLUNAS ---
-        col_audit, col_canc, col_inut = st.columns(3)
-        with col_audit:
+        col_a, col_c, col_i = st.columns(3)
+        with col_a:
             st.markdown("### ⚠️ BURACOS")
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ Tudo em ordem.")
-        with col_canc:
+            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ OK")
+        with col_c:
             st.markdown("### ❌ CANCELADAS")
             st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma nota.")
-        with col_inut:
+        with col_i:
             st.markdown("### 🚫 INUTILIZADAS")
             st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma nota.")
-
         st.divider()
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
-        with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
-        if st.button("⛏️ NOVO GARIMPO"):
-            st.session_state.clear(); st.rerun()
+        with col1: st.download_button("📂 BAIXAR ORGANIZADO", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
+        with col2: st.download_button("📦 BAIXAR TODOS", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
+        if st.button("⛏️ NOVO GARIMPO"): st.session_state.clear(); st.rerun()
 else:
     st.warning("👈 Insira o CNPJ na barra lateral para começar.")
