@@ -92,7 +92,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINO EXTRAÇÃO DA CHAVE) ---
+# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINO MULTI-MODELO E CHAVE) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -132,7 +132,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             
         resumo["Tipo"], resumo["Status"] = tipo, status
 
-        # AJUSTE: Se for Cancelada ou Inutilizada, tenta pegar o número real da nota pela CHAVE
+        # AJUSTE: Extração precisa de Número e Série via Chave de Acesso para Canceladas/Inutilizadas
         if status in ["CANCELADOS", "INUTILIZADOS"] and resumo["Chave"]:
             resumo["Série"] = str(int(resumo["Chave"][22:25]))
             resumo["Número"] = int(resumo["Chave"][25:34])
@@ -147,7 +147,6 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         if not cnpj_emit and resumo["Chave"]: cnpj_emit = resumo["Chave"][6:20]
-        
         is_p = (cnpj_emit == client_cnpj_clean)
         
         if is_p:
@@ -182,13 +181,12 @@ st.markdown("<h1>⛏️ O GARIMPEIRO</h1>", unsafe_allow_html=True)
 with st.container():
     m_col1, m_col2 = st.columns(2)
     with m_col1:
-        st.markdown("""<div class="instrucoes-card"><h3>📖 Passo a Passo</h3><ol><li><b>Arquivos:</b> Arraste XMLs ou ZIPs (com subpastas).</li><li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li><li><b>Auditoria:</b> Sistema checa 2.000+ arquivos em segundos.</li><li><b>Download:</b> Baixe o ZIP organizado.</li></ol></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📖 Passo a Passo</h3><ol><li><b>Arquivos:</b> Arraste XMLs ou ZIPs (com subpastas).</li><li><b>Processamento:</b> Clique em <b>"🚀 INICIAR GRANDE GARIMPO"</b>.</li><li><b>Auditoria:</b> Sistema checa numeração via Chave de Acesso.</li><li><b>Download:</b> Baixe o ZIP organizado.</li></ol></div>""", unsafe_allow_html=True)
     with m_col2:
-        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>Extração Total:</b> Abre recursivamente ZIP dentro de ZIP.</li><li><b>Multi-Modelo:</b> Identifica NF-e, CT-e, MDF-e e NFC-e.</li><li><b>Fiscal:</b> Separação automática entre Entrada e Saída.</li><li><b>Auditoria:</b> Relatório de buracos, canceladas e inutilizadas.</li></ul></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="instrucoes-card"><h3>📊 O que será obtido?</h3><ul><li><b>Extração Total:</b> Abre recursivamente ZIP dentro de ZIP.</li><li><b>Tabelas Extras:</b> Relatórios de notas canceladas e inutilizadas.</li><li><b>Fiscal:</b> Separação automática entre Entrada e Saída.</li><li><b>Auditoria:</b> Relatório de buracos e valores.</li></ul></div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# INICIALIZAÇÃO DE ESTADO
 keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
@@ -234,12 +232,11 @@ if st.session_state['confirmado']:
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
                                         if res["Número"] > 0:
-                                            # COLETAR PARA AS NOVAS TABELAS
                                             if res["Status"] == "CANCELADOS":
                                                 canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Número NF-e": res["Número"]})
                                             elif res["Status"] == "INUTILIZADOS":
                                                 inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Número NF-e": res["Número"]})
-
+                                            
                                             sk = (res["Tipo"], res["Série"])
                                             if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                                             audit_map[sk]["nums"].add(res["Número"])
@@ -265,18 +262,16 @@ if st.session_state['confirmado']:
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
-        
         if not st.session_state['df_faltantes'].empty:
-            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA")
+            st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS NO LOTE)")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-
-        # NOVAS TABELAS ACRESCENTADAS
-        col_canc, col_inut = st.columns(2)
-        with col_canc:
+        
+        c_canc, c_inut = st.columns(2)
+        with c_canc:
             if not st.session_state['df_canceladas'].empty:
                 st.markdown("### ❌ NOTAS CANCELADAS")
                 st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
-        with col_inut:
+        with c_inut:
             if not st.session_state['df_inutilizadas'].empty:
                 st.markdown("### 🚫 NOTAS INUTILIZADAS")
                 st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
