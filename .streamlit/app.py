@@ -92,7 +92,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FINÍSSIMO NAS POSIÇÕES DA CHAVE) ---
+# --- MOTOR DE IDENTIFICAÇÃO (AJUSTE FISCAL DE CHAVE DE REFERÊNCIA) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -110,9 +110,20 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l: return None, False
         
-        # Busca a chave de acesso (44 dígitos) - Priorizamos a tag <chNFe> ou <infNFe Id="NFe...">
-        match_ch = re.search(r'(\d{44})', content_str)
-        resumo["Chave"] = match_ch.group(0) if match_ch else ""
+        # BUSCA DA CHAVE REAL (Evita pegar o ID do evento que tem números a mais)
+        # Procuramos especificamente pela tag de chave de referência (chNFe, chCTe, etc)
+        match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
+        if not match_ch:
+            # Se não for evento, busca o padrão de nota normal (Id="NFe...")
+            match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
+            if match_ch:
+                resumo["Chave"] = match_ch.group(1)
+            else:
+                # Fallback para busca genérica de 44 dígitos se nada acima funcionar
+                match_gen = re.search(r'(\d{44})', content_str)
+                resumo["Chave"] = match_gen.group(0) if match_gen else ""
+        else:
+            resumo["Chave"] = match_ch.group(1)
         
         if resumo["Chave"]:
             resumo["Ano"], resumo["Mes"] = "20" + resumo["Chave"][2:4], resumo["Chave"][4:6]
@@ -120,28 +131,22 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             data_match = re.search(r'<(?:dhemi|dhregevento)>(\d{4})-(\d{2})', tag_l)
             if data_match: resumo["Ano"], resumo["Mes"] = data_match.group(1), data_match.group(2)
 
-        # IDENTIFICAÇÃO DE MODELO
         tipo = "NF-e"
         if '<mod>65</mod>' in tag_l: tipo = "NFC-e"
         elif '<mod>57</mod>' in tag_l or '<infcte' in tag_l: tipo = "CT-e"
         elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
         
         status = "NORMAIS"
-        if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: 
-            status = "CANCELADOS"
-        elif '110110' in tag_l: 
-            status = "CARTA_CORRECAO"
-        elif '<inutnfe' in tag_l or '<procinut' in tag_l:
+        if '110111' in tag_l or '<cstat>101</cstat>' in tag_l or 'cancelamento' in tag_l: status = "CANCELADOS"
+        elif '110110' in tag_l: status = "CARTA_CORRECAO"
+        elif '<inutnfe' in tag_l or '<procinut' in tag_l or '<inutcte' in tag_l:
             status, tipo = "INUTILIZADOS", "Inutilizacoes"
             
         resumo["Tipo"], resumo["Status"] = tipo, status
 
-        # AJUSTE DA CHAVE (EXTRAÇÃO FISCAL PADRÃO)
-        # Se temos uma chave de 44 dígitos, extraímos Série e Número dela obrigatoriamente
+        # EXTRAÇÃO PRECISA VIA CHAVE DE REFERÊNCIA
         if len(resumo["Chave"]) == 44:
-            # Série: 23º ao 25º dígito (Index 22 até 25)
             resumo["Série"] = str(int(resumo["Chave"][22:25]))
-            # Número: 26º ao 34º dígito (Index 25 até 34)
             resumo["Número"] = int(resumo["Chave"][25:34])
         else:
             resumo["Série"] = re.search(r'<(?:serie)>(\d+)</', tag_l).group(1) if re.search(r'<(?:serie)>(\d+)</', tag_l) else "0"
@@ -154,7 +159,6 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         if not cnpj_emit and resumo["Chave"]: cnpj_emit = resumo["Chave"][6:20]
-        
         is_p = (cnpj_emit == client_cnpj_clean)
         
         if is_p:
@@ -225,15 +229,13 @@ if st.session_state['confirmado']:
                                 key = res["Chave"] if res["Chave"] else name
                                 if key not in p_keys:
                                     p_keys.add(key)
-                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
-                                    z_todos.writestr(name, xml_data)
+                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data); z_todos.writestr(name, xml_data)
                                     rel_list.append(res)
                                     if is_p:
                                         if res["Status"] in st_counts: st_counts[res["Status"]] += 1
                                         if res["Número"] > 0:
                                             if res["Status"] == "CANCELADOS":
                                                 canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Número NF-e": res["Número"]})
-                                            
                                             sk = (res["Tipo"], res["Série"])
                                             if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                                             audit_map[sk]["nums"].add(res["Número"])
@@ -262,7 +264,6 @@ if st.session_state['confirmado']:
         if not st.session_state['df_faltantes'].empty:
             st.markdown("### ⚠️ AUDITORIA DE SEQUÊNCIA (BURACOS NO LOTE)")
             st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-        
         if not st.session_state['df_canceladas'].empty:
             st.markdown("### ❌ NOTAS CANCELADAS IDENTIFICADAS")
             st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
