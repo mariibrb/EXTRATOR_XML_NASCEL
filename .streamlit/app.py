@@ -109,7 +109,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # AJUSTE PARA INUTILIZAÇÃO (XML real sem chave)
+        # --- LÓGICA DE INUTILIZAÇÃO (XML real nota 5039) ---
         if '<inut' in tag_l or '<retinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
             resumo["Série"] = re.search(r'<serie>(\d+)</', tag_l).group(1) if re.search(r'<serie>(\d+)</', tag_l) else "0"
@@ -118,6 +118,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             resumo["Chave"] = f"INUT_{resumo['Série']}_{resumo['Número']}"
         
         else:
+            # BUSCA DA CHAVE DE REFERÊNCIA
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
                 match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
@@ -257,6 +258,7 @@ if st.session_state['confirmado']:
                                     lote_dict[key] = (res, is_p)
                                     z_org.writestr(f"{res['Pasta']}/{name}", xml_data); z_todos.writestr(name, xml_data)
 
+            # --- LOGICA DE DUPLA CHECAGEM: BURACO > CANCELADA > INUTILIZADA ---
             rel_list, audit_map, canc_list, inut_list = [], {}, [], []
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
@@ -268,9 +270,10 @@ if st.session_state['confirmado']:
                         if res["Status"] == "CANCELADOS":
                             canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
                         elif res["Status"] == "INUTILIZADOS":
-                            inut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
+                            inut_list.append({"Modelo": "NF-e", "Série": res["Série"], "Nota": res["Número"]})
                         
-                        sk = (res["Tipo"], res["Série"])
+                        # Primeiro valida buraco: ocupa o número no mapa de auditoria
+                        sk = ("NF-e" if res["Tipo"] == "Inutilizacoes" else res["Tipo"], res["Série"])
                         if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                         audit_map[sk]["nums"].add(res["Número"]); audit_map[sk]["valor"] += res["Valor"]
 
@@ -279,6 +282,7 @@ if st.session_state['confirmado']:
                 ns = sorted(list(dados["nums"]))
                 if ns:
                     res_final.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
+                    # Se achou buraco, cria a lista de faltantes
                     for b in sorted(list(set(range(ns[0], ns[-1] + 1)) - set(ns))):
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
@@ -288,25 +292,25 @@ if st.session_state['confirmado']:
         st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
-        c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
-        c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
+        c1.metric("📦 VOLUME CLIENTE", len(st.session_state['relatorio']))
+        c2.metric("❌ CANCELADAS", sc["CANCELADOS"])
+        c3.metric("🚫 INUTILIZADAS", sc["INUTILIZADOS"])
         
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
         st.markdown("---")
-        # --- QUADROS LADO A LADO: BURACO > CANCELADA > INUTILIZADA ---
+        # --- QUADROS LADO A LADO EM 3 COLUNAS ---
         col_audit, col_canc, col_inut = st.columns(3)
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ OK")
+            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ Tudo em ordem.")
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma")
+            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma nota.")
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma")
+            st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma nota.")
 
         st.divider()
         col1, col2 = st.columns(2)
