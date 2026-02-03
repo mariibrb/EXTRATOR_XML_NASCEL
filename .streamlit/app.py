@@ -23,6 +23,7 @@ def aplicar_estilo_premium():
             background-color: #FFFFFF !important;
             border-right: 1px solid #FFDEEF !important;
             min-width: 400px !important;
+            max-width: 400px !important;
         }
 
         div.stButton > button {
@@ -91,7 +92,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (EXTREMA PRECISÃO FISCAL) ---
+# --- MOTOR DE IDENTIFICAÇÃO (PRECISÃO FISCAL REFORÇADA PARA INUTILIZAÇÃO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -109,22 +110,15 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # 1. DETECÇÃO DE INUTILIZAÇÃO (XML real sem chave de 44 dígitos)
-        if '<inut' in tag_l or '<retinut' in tag_l or '<procinut' in tag_l:
-            resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
-            if '<mod>57</mod>' in tag_l: resumo["Tipo"] = "CT-e"
-            elif '<mod>65</mod>' in tag_l: resumo["Tipo"] = "NFC-e"
-            
-            s_match = re.search(r'<serie>(\d+)</', tag_l)
-            resumo["Série"] = s_match.group(1) if s_match else "0"
-            n_match = re.search(r'<nnfini>(\d+)</', tag_l)
-            resumo["Número"] = int(n_match.group(1)) if n_match else 0
-            
-            ano_match = re.search(r'<ano>(\d{2})</', tag_l)
-            resumo["Ano"] = "20" + ano_match.group(1) if ano_match else "0000"
+        # 1. TRATAMENTO ESPECÍFICO PARA INUTILIZAÇÃO (XML real sem chave de 44 dígitos)
+        if '<inut' in tag_l or '<retinut' in tag_l:
+            resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e" # Mapeado para NF-e para preencher sequência
+            resumo["Série"] = re.search(r'<serie>(\d+)</', tag_l).group(1) if re.search(r'<serie>(\d+)</', tag_l) else "0"
+            resumo["Número"] = int(re.search(r'<nnfini>(\d+)</', tag_l).group(1)) if re.search(r'<nnfini>(\d+)</', tag_l) else 0
+            resumo["Ano"] = "20" + re.search(r'<ano>(\d{2})</', tag_l).group(1) if re.search(r'<ano>(\d{2})</', tag_l) else "0000"
             resumo["Chave"] = f"INUT_{resumo['Série']}_{resumo['Número']}"
-            
-        # 2. DETECÇÃO VIA CHAVE (NF-e, CT-e, MDF-e, Eventos)
+        
+        # 2. TRATAMENTO PARA NOTAS E EVENTOS VIA CHAVE
         else:
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
@@ -147,22 +141,27 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
             
             status = "NORMAIS"
+            # Identifica cancelamento explicitamente por código ou tag
             if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
                 status = "CANCELADOS"
             elif '110110' in tag_l: status = "CARTA_CORRECAO"
-                
+            
             resumo["Tipo"], resumo["Status"] = tipo, status
 
             if status == "NORMAIS":
                 v_match = re.search(r'<(?:vnf|vtprest|vreceb)>([\d.]+)</', tag_l)
                 resumo["Valor"] = float(v_match.group(1)) if v_match else 0.0
-            
+
         cnpj_emit = re.search(r'<cnpj>(\d+)</cnpj>', tag_l).group(1) if re.search(r'<cnpj>(\d+)</cnpj>', tag_l) else ""
         if not cnpj_emit and resumo["Chave"] and not resumo["Chave"].startswith("INUT_"): 
             cnpj_emit = resumo["Chave"][6:20]
         
         is_p = (cnpj_emit == client_cnpj_clean)
-        resumo["Pasta"] = f"{'EMITIDOS_CLIENTE' if is_p else 'RECEBIDOS_TERCEIROS'}/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+        
+        if is_p:
+            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+        else:
+            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
             
         return resumo, is_p
     except: return None, False
@@ -195,10 +194,10 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📖 Instruções de Uso</h3>
             <ul>
-                <li><b>Fonte de Dados:</b> Aceita arquivos XML individuais ou pacotes ZIP (mergulho recursivo automático).</li>
-                <li><b>Identificação Fiscal:</b> Série e Número extraídos da <b>Chave de Acesso</b> ou tags de inutilização (ex: nota 5039).</li>
-                <li><b>Filtro de CNPJ:</b> Separa automaticamente <b>Emissão Própria</b> de <b>Terceiros</b>.</li>
-                <li><b>Prevalência:</b> Cancelamentos e Inutilizações sobrepõem notas normais na auditoria de sequência.</li>
+                <li><b>Fonte de Dados:</b> O sistema aceita arquivos <b>XML</b> individuais ou pacotes <b>ZIP</b>. </li>
+                <li><b>Identificação Fiscal:</b> A Série e o Número são extraídos diretamente da <b>Chave de Acesso (44 dígitos)</b> ou tags de inutilização. Isso garante que, em eventos de cancelamento, o número lido seja o da nota de referência.</li>
+                <li><b>Critério de Saída (Emitidos):</b> Documentos onde o CNPJ do emitente coincide com o configurado são classificados como <b>EMITIDOS</b>.</li>
+                <li><b>Regra de Prevalência:</b> Se houver duplicidade, o sistema prioriza os status <b>CANCELADO</b> ou <b>INUTILIZADO</b> no relatório de sequência.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -207,9 +206,10 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📊 O que será obtido?</h3>
             <ul>
-                <li><b>ZIP Organizado:</b> Pastas separadas por Emitente, Modelo, Status e Cronologia.</li>
-                <li><b>Peneira Lado a Lado:</b> Painel confrontando Buracos, Canceladas e Inutilizadas.</li>
-                <li><b>Relatório de Valor:</b> Somatório do valor contábil real por série e modelo.</li>
+                <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
+                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
+                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
+                <li><b>Peneira Lado a Lado:</b> Auditoria confrontando buracos, canceladas e inutilizadas.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -243,7 +243,7 @@ if st.session_state['confirmado']:
             lote_dict, st_counts = {}, {"CANCELADOS": 0, "INUTILIZADOS": 0}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
             
-            with st.status("⛏️ Minerando...", expanded=True):
+            with st.status("⛏️ Minerando profunda...", expanded=True):
                 with zipfile.ZipFile(buf_org, "w", zipfile.ZIP_STORED) as z_org, \
                      zipfile.ZipFile(buf_todos, "w", zipfile.ZIP_STORED) as z_todos:
                     
@@ -257,7 +257,8 @@ if st.session_state['confirmado']:
                                     if res["Status"] in ["CANCELADOS", "INUTILIZADOS"]: lote_dict[key] = (res, is_p)
                                 else:
                                     lote_dict[key] = (res, is_p)
-                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data); z_todos.writestr(name, xml_data)
+                                    z_org.writestr(f"{res['Pasta']}/{name}", xml_data)
+                                    z_todos.writestr(name, xml_data)
 
             rel_list, audit_map, canc_list, inut_list = [], {}, [], []
             for k, (res, is_p) in lote_dict.items():
@@ -279,14 +280,15 @@ if st.session_state['confirmado']:
             for (t, s), dados in audit_map.items():
                 ns = sorted(list(dados["nums"]))
                 if ns:
-                    res_final.append({"Documento": t, "Série": s, "Início": ns[0], "Fim": ns[-1], "Qtde": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
-                    for b in sorted(list(set(range(ns[0], ns[-1] + 1)) - set(ns))):
-                        fal_final.append({"Tipo": t, "Série": s, "Faltante": b})
+                    n_min, n_max = ns[0], ns[-1]
+                    res_final.append({"Documento": t, "Série": s, "Início": n_min, "Fim": n_max, "Quantidade": len(ns), "Valor Contábil (R$)": round(dados["valor"], 2)})
+                    for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
+                        fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
             st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
             st.rerun()
     else:
-        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos analisados.")
+        st.success(f"⛏️ Garimpo Concluído! {len(st.session_state['relatorio'])} arquivos únicos analisados.")
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
         c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
@@ -297,16 +299,29 @@ if st.session_state['confirmado']:
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
         st.markdown("---")
+        # --- AJUSTE FINÍSSIMO: QUADROS LADO A LADO EM 3 COLUNAS ---
         col_audit, col_canc, col_inut = st.columns(3)
+        
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True) if not st.session_state['df_faltantes'].empty else st.info("✅ Tudo em ordem.")
+            if not st.session_state['df_faltantes'].empty:
+                st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+            else:
+                st.info("✅ Tudo em ordem.")
+
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True) if not st.session_state['df_canceladas'].empty else st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_canceladas'].empty:
+                st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Nenhuma nota.")
+
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True) if not st.session_state['df_inutilizadas'].empty else st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_inutilizadas'].empty:
+                st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Nenhuma nota.")
 
         st.divider()
         col1, col2 = st.columns(2)
