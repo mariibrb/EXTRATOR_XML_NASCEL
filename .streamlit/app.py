@@ -93,7 +93,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO (CORRIGIDO E OTIMIZADO) ---
+# --- MOTOR DE IDENTIFICAÇÃO ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -111,7 +111,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<inut' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # 1. IDENTIFICAÇÃO DE INUTILIZADAS (Prioridade e leitura correta do XML de pedido)
+        # 1. IDENTIFICAÇÃO DE INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
             if '<mod>65</mod>' in tag_l: resumo["Tipo"] = "NFC-e"
@@ -127,7 +127,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             resumo["Chave"] = f"INUT_{resumo['Série']}_{ini}"
 
         else:
-            # 2. BUSCA DA CHAVE DE REFERÊNCIA (Notas e Eventos)
+            # 2. BUSCA DA CHAVE DE REFERÊNCIA
             match_ch = re.search(r'<(?:chNFe|chCTe|chMDFe)>(\d{44})</', content_str, re.IGNORECASE)
             if not match_ch:
                 match_ch = re.search(r'Id=["\'](?:NFe|CTe|MDFe)?(\d{44})["\']', content_str, re.IGNORECASE)
@@ -148,7 +148,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
             elif '<mod>57</mod>' in tag_l or '<infcte' in tag_l: tipo = "CT-e"
             elif '<mod>58</mod>' in tag_l or '<infmdfe' in tag_l: tipo = "MDF-e"
             
-            # 3. IDENTIFICAÇÃO DE CANCELADAS (Só conta se tiver código específico 110111)
+            # 3. IDENTIFICAÇÃO DE CANCELADAS
             status = "NORMAIS"
             if '110111' in tag_l or '<cstat>101</cstat>' in tag_l: 
                 status = "CANCELADOS"
@@ -218,20 +218,20 @@ with st.container():
                 <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
                 <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
                 <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
-                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas e notas inutilizadas.</li>
+                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas, inutilizadas e autorizadas.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'st_counts']
+keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
         elif 'z_' in k: st.session_state[k] = None
         elif k == 'relatorio': st.session_state[k] = []
-        elif k == 'st_counts': st.session_state[k] = {"CANCELADOS": 0, "INUTILIZADOS": 0}
+        elif k == 'st_counts': st.session_state[k] = {"CANCELADOS": 0, "INUTILIZADOS": 0, "AUTORIZADAS": 0}
         else: st.session_state[k] = False
 
 with st.sidebar:
@@ -295,7 +295,7 @@ if st.session_state['confirmado']:
                 progresso_bar.empty()
                 status_text.empty()
 
-            rel_list, audit_map, canc_list, inut_list = [], {}, [], []
+            rel_list, audit_map, canc_list, inut_list, aut_list = [], {}, [], [], []
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
                 if is_p:
@@ -312,6 +312,8 @@ if st.session_state['confirmado']:
                             audit_map[sk]["nums"].add(res["Número"])
                             if res["Status"] == "CANCELADOS":
                                 canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
+                            elif res["Status"] == "NORMAIS":
+                                aut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Valor": res["Valor"], "Chave": res["Chave"]})
                             audit_map[sk]["valor"] += res["Valor"]
 
             res_final, fal_final = [], []
@@ -323,10 +325,19 @@ if st.session_state['confirmado']:
                     for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
                         fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
-            # --- SINCIA FORÇADA: O contador É o tamanho da lista ---
-            st_counts = {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list)}
+            st_counts = {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list), "AUTORIZADAS": len(aut_list)}
 
-            st.session_state.update({'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 'relatorio': rel_list, 'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final), 'df_canceladas': pd.DataFrame(canc_list), 'df_inutilizadas': pd.DataFrame(inut_list), 'st_counts': st_counts, 'garimpo_ok': True})
+            st.session_state.update({
+                'z_org': buf_org.getvalue(), 'z_todos': buf_todos.getvalue(), 
+                'relatorio': rel_list, 
+                'df_resumo': pd.DataFrame(res_final), 
+                'df_faltantes': pd.DataFrame(fal_final), 
+                'df_canceladas': pd.DataFrame(canc_list), 
+                'df_inutilizadas': pd.DataFrame(inut_list), 
+                'df_autorizadas': pd.DataFrame(aut_list),
+                'st_counts': st_counts, 
+                'garimpo_ok': True
+            })
             st.rerun()
     else:
         sc = st.session_state['st_counts']
@@ -339,28 +350,19 @@ if st.session_state['confirmado']:
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
         st.markdown("---")
-        # --- QUADROS LADO A LADO ---
         col_audit, col_canc, col_inut = st.columns(3)
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            if not st.session_state['df_faltantes'].empty:
-                st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-            else:
-                st.info("✅ Tudo em ordem.")
-
+            if not st.session_state['df_faltantes'].empty: st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+            else: st.info("✅ Tudo em ordem.")
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            if not st.session_state['df_canceladas'].empty:
-                st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
-            else:
-                st.info("ℹ️ Nenhuma nota.")
-
+            if not st.session_state['df_canceladas'].empty: st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+            else: st.info("ℹ️ Nenhuma nota.")
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            if not st.session_state['df_inutilizadas'].empty:
-                st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
-            else:
-                st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_inutilizadas'].empty: st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
+            else: st.info("ℹ️ Nenhuma nota.")
 
         st.divider()
         
@@ -371,6 +373,7 @@ if st.session_state['confirmado']:
             st.session_state['df_faltantes'].to_excel(writer, sheet_name='Buracos', index=False)
             st.session_state['df_canceladas'].to_excel(writer, sheet_name='Canceladas', index=False)
             st.session_state['df_inutilizadas'].to_excel(writer, sheet_name='Inutilizadas', index=False)
+            st.session_state['df_autorizadas'].to_excel(writer, sheet_name='Autorizadas', index=False)
 
         col1, col2, col3 = st.columns(3)
         with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
