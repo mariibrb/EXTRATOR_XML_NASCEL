@@ -7,23 +7,87 @@ import pandas as pd
 import random
 import gc
 
-# --- CONFIGURAÇÃO E ESTILO ---
+# --- CONFIGURAÇÃO E ESTILO (CLONE ABSOLUTO DO DIAMOND TAX) ---
 st.set_page_config(page_title="O GARIMPEIRO | Premium Edition", layout="wide", page_icon="⛏️")
 
 def aplicar_estilo_premium():
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;800&family=Plus+Jakarta+Sans:wght@400;700&display=swap');
+
         header, [data-testid="stHeader"] { display: none !important; }
-        .stApp { background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; }
-        [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #FFDEEF !important; min-width: 400px !important; }
-        div.stButton > button { color: #6C757D !important; background-color: #FFFFFF !important; border: 1px solid #DEE2E6 !important; border-radius: 15px !important; font-family: 'Montserrat', sans-serif !important; font-weight: 800 !important; height: 60px !important; text-transform: uppercase; transition: all 0.4s; width: 100% !important; box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important; }
-        div.stButton > button:hover { transform: translateY(-5px) !important; box-shadow: 0 10px 20px rgba(255,105,180,0.2) !important; border-color: #FF69B4 !important; color: #FF69B4 !important; }
-        [data-testid="stFileUploader"] { border: 2px dashed #FF69B4 !important; border-radius: 20px !important; background: #FFFFFF !important; padding: 20px !important; }
-        div.stDownloadButton > button { background-color: #FF69B4 !important; color: white !important; border: 2px solid #FFFFFF !important; font-weight: 700 !important; border-radius: 15px !important; box-shadow: 0 0 15px rgba(255, 105, 180, 0.3) !important; text-transform: uppercase; width: 100% !important; }
-        h1, h2, h3 { font-family: 'Montserrat', sans-serif; font-weight: 800; color: #FF69B4 !important; text-align: center; }
-        .instrucoes-card { background-color: rgba(255, 255, 255, 0.7); border-radius: 15px; padding: 20px; border-left: 5px solid #FF69B4; margin-bottom: 20px; min-height: 280px; }
-        [data-testid="stMetric"] { background: white !important; border-radius: 20px !important; border: 1px solid #FFDEEF !important; padding: 15px !important; }
+        .stApp { 
+            background: radial-gradient(circle at top right, #FFDEEF 0%, #F8F9FA 100%) !important; 
+        }
+
+        [data-testid="stSidebar"] {
+            background-color: #FFFFFF !important;
+            border-right: 1px solid #FFDEEF !important;
+            min-width: 400px !important;
+            max-width: 400px !important;
+        }
+
+        div.stButton > button {
+            color: #6C757D !important; 
+            background-color: #FFFFFF !important; 
+            border: 1px solid #DEE2E6 !important;
+            border-radius: 15px !important;
+            font-family: 'Montserrat', sans-serif !important;
+            font-weight: 800 !important;
+            height: 60px !important;
+            text-transform: uppercase;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+            width: 100% !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        }
+
+        div.stButton > button:hover {
+            transform: translateY(-5px) !important;
+            box-shadow: 0 10px 20px rgba(255,105,180,0.2) !important;
+            border-color: #FF69B4 !important;
+            color: #FF69B4 !important;
+        }
+
+        [data-testid="stFileUploader"] { 
+            border: 2px dashed #FF69B4 !important; 
+            border-radius: 20px !important;
+            background: #FFFFFF !important;
+            padding: 20px !important;
+        }
+
+        div.stDownloadButton > button {
+            background-color: #FF69B4 !important; 
+            color: white !important; 
+            border: 2px solid #FFFFFF !important;
+            font-weight: 700 !important;
+            border-radius: 15px !important;
+            box-shadow: 0 0 15px rgba(255, 105, 180, 0.3) !important;
+            text-transform: uppercase;
+            width: 100% !important;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 800;
+            color: #FF69B4 !important;
+            text-align: center;
+        }
+
+        .instrucoes-card {
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 15px;
+            padding: 20px;
+            border-left: 5px solid #FF69B4;
+            margin-bottom: 20px;
+            min-height: 280px;
+        }
+
+        [data-testid="stMetric"] {
+            background: white !important;
+            border-radius: 20px !important;
+            border: 1px solid #FFDEEF !important;
+            padding: 15px !important;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -138,9 +202,9 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📖 Instruções de Uso</h3>
     <ul>
-        <li><b>Etapa 1:</b> Suba os XMLs para o garimpo inicial e geração dos ZIPs.</li>
+        <li><b>Etapa 1:</b> Suba os XMLs para obter o raio-x inicial e os ZIPs.</li>
         <li><b>Etapa 2 (Novo):</b> Suba o relatório Excel de Autenticidade para validar o status real.</li>
-        <li><b>Relatório Final:</b> Inclui aba 'TODOS' com lista completa de XMLs lidos.</li>
+        <li><b>Relatório Final:</b> Inclui aba 'GERAL_TODOS' com todos os arquivos lidos.</li>
     </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -151,14 +215,15 @@ with st.container():
             <ul>
                 <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
                 <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas e inutilizadas.</li>
-                <li><b>Geral Completo:</b> Aba com TODOS os XMLs (Próprios e Terceiros).</li>
+                <li><b>Validação Autenticidade:</b> Cruzamento de dados na Etapa 2.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_divergencias', 'df_geral', 'st_counts']
+# Inclui 'df_geral' na inicialização do estado
+keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_geral', 'df_divergencias', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
@@ -180,13 +245,13 @@ with st.sidebar:
 
 if st.session_state['confirmado']:
     
-    # 1. TELA INICIAL (ETAPA 1 - SÓ XML)
+    # --- ETAPA 1: GARIMPO INICIAL (CÓDIGO INTACTO) ---
     if not st.session_state['garimpo_ok']:
         uploaded_files = st.file_uploader("📂 1. ARQUIVOS XML/ZIP (Etapa Obrigatória)", accept_multiple_files=True)
-        
-        if uploaded_files and st.button("🚀 INICIAR GARIMPO (ETAPA 1)"):
+        if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
             lote_dict = {}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
+            
             progresso_bar = st.progress(0)
             status_text = st.empty()
             total_arquivos = len(uploaded_files)
@@ -197,6 +262,7 @@ if st.session_state['confirmado']:
                     
                     for i, f in enumerate(uploaded_files):
                         if i % 50 == 0: gc.collect()
+                        
                         if total_arquivos > 0 and i % max(1, int(total_arquivos * 0.02)) == 0:
                             progresso_bar.progress((i + 1) / total_arquivos)
                             status_text.text(f"⛏️ Processando arquivo {i+1}/{total_arquivos}: {f.name}")
@@ -205,7 +271,7 @@ if st.session_state['confirmado']:
                             f.seek(0)
                             content = f.read()
                             todos_xmls = extrair_recursivo(content, f.name)
-                            del content
+                            del content 
                             
                             for name, xml_data in todos_xmls:
                                 res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
@@ -219,24 +285,24 @@ if st.session_state['confirmado']:
                             del todos_xmls
                         except: continue
                 
-                status_box.update(label="✅ Etapa 1 Concluída!", state="complete", expanded=False)
+                status_box.update(label="✅ Concluído!", state="complete", expanded=False)
                 progresso_bar.empty(); status_text.empty()
 
-            # --- PROCESSAMENTO INICIAL (SEM AUTENTICIDADE) ---
+            # Processamento Inicial
             rel_list, audit_map, canc_list, inut_list, aut_list, geral_list = [], {}, [], [], [], []
-            
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
-                # LISTA GERAL (TODOS OS XMLs)
+                
+                # --- MONTAGEM DA LISTA GERAL INICIAL ---
                 origem_txt = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
                 if res["Status"] == "INUTILIZADOS":
                     r = res.get("Range", (res["Número"], res["Número"]))
                     for n in range(r[0], r[1] + 1):
-                        geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": n, "Chave": res["Chave"], "Status Final": "INUTILIZADA", "Valor": 0.0})
+                        geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": n, "Chave": res["Chave"], "Status": "INUTILIZADA", "Valor": 0.0})
                 else:
-                    geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status Final": res["Status"], "Valor": res["Valor"]})
+                    geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status": res["Status"], "Valor": res["Valor"]})
 
-                # LISTAS DE AUDITORIA (SÓ PRÓPRIAS)
+                # --- FILTROS DE AUDITORIA (SÓ PRÓPRIAS) ---
                 if is_p:
                     sk = (res["Tipo"], res["Série"])
                     if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -274,18 +340,17 @@ if st.session_state['confirmado']:
                 'df_canceladas': pd.DataFrame(canc_list), 
                 'df_inutilizadas': pd.DataFrame(inut_list), 
                 'df_autorizadas': pd.DataFrame(aut_list),
-                'df_geral': pd.DataFrame(geral_list),
-                'df_divergencias': pd.DataFrame(),
+                'df_geral': pd.DataFrame(geral_list), # Aba Inicial
                 'st_counts': st_counts, 
                 'garimpo_ok': True
             })
             st.rerun()
-
-    # 2. TELA DE RESULTADOS + ETAPA 2
-    else: 
+            
+    # --- TELA DE RESULTADOS ---
+    else:
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 AUTORIZADAS", sc.get("AUTORIZADAS", 0))
+        c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
         c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
         
@@ -294,10 +359,10 @@ if st.session_state['confirmado']:
         
         if not st.session_state['df_divergencias'].empty:
             st.markdown("---")
-            st.markdown("### 🚨 DIVERGÊNCIAS (Atualizado após Autenticidade)")
+            st.markdown("### 🚨 DIVERGÊNCIAS (VALIDAÇÃO ETAPA 2)")
             st.error("Notas abaixo eram Autorizadas no XML, mas estão Canceladas na Autenticidade.")
             st.dataframe(st.session_state['df_divergencias'], use_container_width=True, hide_index=True)
-        
+
         st.markdown("---")
         col_audit, col_canc, col_inut = st.columns(3)
         with col_audit:
@@ -315,11 +380,11 @@ if st.session_state['confirmado']:
 
         st.divider()
         
-        # --- ETAPA 2: ATUALIZAR STATUS VIA EXCEL ---
-        st.markdown("### 🕵️ ETAPA 2: VALIDAÇÃO DE AUTENTICIDADE")
-        with st.expander("Clique aqui para subir o Excel e atualizar o status geral", expanded=True):
-            auth_file = st.file_uploader("Suba o Excel (.xlsx) - Coluna A (Chave) e Coluna F (Status)", type=["xlsx", "xls"])
-            if auth_file and st.button("🔄 VALIDAR E ATUALIZAR TABELAS"):
+        # --- MÓDULO ETAPA 2 (VALIDAÇÃO) ---
+        st.markdown("### 🕵️ ETAPA 2: VALIDAÇÃO FINAL")
+        with st.expander("Clique para cruzar com Relatório de Autenticidade (Excel) e gerar a aba 'GERAL_TODOS' atualizada"):
+            auth_file = st.file_uploader("Suba o Excel (.xlsx) [Col A=Chave, Col F=Status]", type=["xlsx", "xls"], key="auth_up")
+            if auth_file and st.button("🔄 CRUZAR E ATUALIZAR"):
                 try:
                     df_auth = pd.read_excel(auth_file)
                     auth_dict = {}
@@ -328,11 +393,12 @@ if st.session_state['confirmado']:
                         status = str(row.iloc[5]).strip().upper()
                         if len(chave) == 44: auth_dict[chave] = status
                     
-                    # RECALCULO COMPLETO
+                    # RECALCULO GERAL
                     audit_map, canc_list, inut_list, aut_list, geral_list, div_list = {}, [], [], [], [], []
                     
+                    # Iteramos sobre o relatório cacheado da Etapa 1
                     for res in st.session_state['relatorio']:
-                        # Define status real
+                        # 1. Determina Status Real
                         status_final = res["Status"]
                         obs = "Via XML"
                         if res["Chave"] in auth_dict:
@@ -340,28 +406,23 @@ if st.session_state['confirmado']:
                             if "CANCEL" in status_excel:
                                 status_final = "CANCELADOS"
                                 obs = "Via Autenticidade"
-                                # Se no XML estava normal e virou cancelada, é divergência
+                                # Divergência se era normal
                                 if res["Status"] == "NORMAIS":
                                     div_list.append({"Chave": res["Chave"], "Nota": res["Número"], "Status XML": "AUTORIZADA", "Status Real": "CANCELADA"})
 
-                        # Monta Geral
-                        origem_txt = "EMISSÃO PRÓPRIA" # Simplificado pois relatório só tem as validadas
-                        is_p = True # Recalculando apenas as filtradas na etapa 1 (que são próprias)
-                        # Nota: Se quiser terceiros na Geral, precisaria guardar tudo no relatorio sem filtro is_p. 
-                        # Assumindo que 'relatorio' tem tudo:
-                        if "Pasta" in res and "EMITIDOS" in res["Pasta"]: is_p = True
-                        else: 
-                            is_p = False
-                            origem_txt = "TERCEIROS"
+                        # 2. Popula Lista GERAL_TODOS (Terceiros + Próprias)
+                        # Identifica origem pelo filtro de pasta original
+                        is_p = True if "EMITIDOS" in res["Pasta"] else False
+                        origem_txt = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
 
                         if status_final == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
-                                geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": n, "Chave": res["Chave"], "Status Final": "INUTILIZADA", "Valor": 0.0})
+                                geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": n, "Chave": res["Chave"], "Status": "INUTILIZADA", "Valor": 0.0})
                         else:
-                            geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status Final": status_final, "Valor": res["Valor"]})
+                            geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status": status_final, "Valor": res["Valor"]})
 
-                        # Monta Quadros (Só Próprias)
+                        # 3. Popula Listas de Auditoria (Apenas Próprias/Emitidas)
                         if is_p:
                             sk = (res["Tipo"], res["Série"])
                             if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -380,15 +441,16 @@ if st.session_state['confirmado']:
                                         aut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Valor": res["Valor"], "Chave": res["Chave"]})
                                     audit_map[sk]["valor"] += res["Valor"]
 
+                    # Atualiza Session State
                     st.session_state.update({
                         'df_canceladas': pd.DataFrame(canc_list),
                         'df_autorizadas': pd.DataFrame(aut_list),
                         'df_inutilizadas': pd.DataFrame(inut_list),
-                        'df_geral': pd.DataFrame(geral_list),
+                        'df_geral': pd.DataFrame(geral_list), # NOVA ABA COMPLETA
                         'df_divergencias': pd.DataFrame(div_list),
                         'st_counts': {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list), "AUTORIZADAS": len(aut_list)}
                     })
-                    st.success("✅ Tudo atualizado com base na autenticidade!")
+                    st.success("✅ Validação concluída! Baixe o Excel atualizado abaixo.")
                     st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
 
@@ -396,7 +458,7 @@ if st.session_state['confirmado']:
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
             st.session_state['df_resumo'].to_excel(writer, sheet_name='Resumo', index=False)
-            st.session_state['df_geral'].to_excel(writer, sheet_name='Geral_Todos', index=False)
+            st.session_state['df_geral'].to_excel(writer, sheet_name='Geral_Todos', index=False) # ABA NOVA
             st.session_state['df_faltantes'].to_excel(writer, sheet_name='Buracos', index=False)
             st.session_state['df_canceladas'].to_excel(writer, sheet_name='Canceladas', index=False)
             st.session_state['df_inutilizadas'].to_excel(writer, sheet_name='Inutilizadas', index=False)
@@ -407,7 +469,7 @@ if st.session_state['confirmado']:
         col1, col2, col3 = st.columns(3)
         with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
         with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
-        with col3: st.download_button("📊 RELATÓRIO EXCEL FINAL", buffer_excel.getvalue(), "relatorio_final.xlsx", use_container_width=True, mime="application/vnd.ms-excel")
+        with col3: st.download_button("📊 RELATÓRIO EXCEL FINAL", buffer_excel.getvalue(), "relatorio_auditoria_completo.xlsx", use_container_width=True, mime="application/vnd.ms-excel")
         
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
