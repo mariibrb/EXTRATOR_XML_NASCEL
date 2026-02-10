@@ -214,17 +214,17 @@ with st.container():
             <h3>📊 O que será obtido?</h3>
             <ul>
                 <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
-                <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
-                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
                 <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas, inutilizadas e autorizadas.</li>
-                <li><b>[NOVO] Auditoria de Autenticidade:</b> Comparação com relatório Excel externo.</li>
+                <li><b>Geral Completo:</b> Lista mestra com TUDO o que foi processado.</li>
+                <li><b>Auditoria Cruzada:</b> Validação final via Excel.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_divergencias', 'st_counts']
+# Adicionado 'df_geral' na inicialização
+keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_divergencias', 'df_geral', 'st_counts']
 for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
@@ -278,7 +278,6 @@ if st.session_state['confirmado']:
                                 res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                                 if res:
                                     key = res["Chave"]
-                                    # Lógica: Se já existe, prioriza Cancelada/Inutilizada
                                     if key in lote_dict:
                                         if res["Status"] in ["CANCELADOS", "INUTILIZADOS"]: lote_dict[key] = (res, is_p)
                                     else:
@@ -291,9 +290,43 @@ if st.session_state['confirmado']:
                 progresso_bar.empty(); status_text.empty()
 
             # PROCESSAMENTO DOS DADOS
-            rel_list, audit_map, canc_list, inut_list, aut_list = [], {}, [], [], []
+            rel_list, audit_map, canc_list, inut_list, aut_list, geral_list = [], {}, [], [], [], []
+            
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
+                
+                # --- MONTAGEM DA LISTA GERAL (TUDO QUE FOI LIDO) ---
+                origem = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
+                
+                # Se for inutilizada, tem que expandir o range para listar tudo na geral
+                if res["Status"] == "INUTILIZADOS":
+                    r = res.get("Range", (res["Número"], res["Número"]))
+                    for n in range(r[0], r[1] + 1):
+                        geral_list.append({
+                            "Origem": origem,
+                            "Modelo": res["Tipo"],
+                            "Série": res["Série"],
+                            "Nota": n,
+                            "Chave": res["Chave"],
+                            "Status XML": "INUTILIZADA",
+                            "Valor": 0.0,
+                            "Ano": res["Ano"],
+                            "Mês": res["Mes"]
+                        })
+                else:
+                    geral_list.append({
+                        "Origem": origem,
+                        "Modelo": res["Tipo"],
+                        "Série": res["Série"],
+                        "Nota": res["Número"],
+                        "Chave": res["Chave"],
+                        "Status XML": res["Status"],
+                        "Valor": res["Valor"],
+                        "Ano": res["Ano"],
+                        "Mês": res["Mes"]
+                    })
+
+                # --- ANÁLISE ESPECÍFICA (SÓ PRÓPRIAS) ---
                 if is_p:
                     sk = (res["Tipo"], res["Série"])
                     if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -307,7 +340,6 @@ if st.session_state['confirmado']:
                         if res["Número"] > 0:
                             audit_map[sk]["nums"].add(res["Número"])
                             if res["Status"] == "CANCELADOS":
-                                # --- AJUSTE: INCLUÍDA A CHAVE NA LISTA DE CANCELADAS ---
                                 canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"]})
                             elif res["Status"] == "NORMAIS":
                                 aut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Valor": res["Valor"], "Chave": res["Chave"]})
@@ -332,7 +364,8 @@ if st.session_state['confirmado']:
                 'df_canceladas': pd.DataFrame(canc_list), 
                 'df_inutilizadas': pd.DataFrame(inut_list), 
                 'df_autorizadas': pd.DataFrame(aut_list),
-                'df_divergencias': pd.DataFrame(), # Limpa divergencias ao iniciar novo
+                'df_geral': pd.DataFrame(geral_list),
+                'df_divergencias': pd.DataFrame(),
                 'st_counts': st_counts, 
                 'garimpo_ok': True
             })
@@ -349,11 +382,10 @@ if st.session_state['confirmado']:
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
-        # --- QUADRO DE DIVERGÊNCIAS (APARECE SÓ SE HOUVER DIVERGENCIA APÓS ETAPA 2) ---
         if not st.session_state['df_divergencias'].empty:
             st.markdown("---")
-            st.markdown("### 🚨 DIVERGÊNCIAS ENCONTRADAS (XML vs EXCEL)")
-            st.error(f"Foram encontradas {len(st.session_state['df_divergencias'])} notas que estão AUTORIZADAS no XML mas CANCELADAS no relatório de autenticidade.")
+            st.markdown("### 🚨 DIVERGÊNCIAS DE STATUS (XML vs EXCEL)")
+            st.error(f"Foram encontradas {len(st.session_state['df_divergencias'])} notas que constam como AUTORIZADAS no XML, mas estão CANCELADAS no relatório de autenticidade.")
             st.dataframe(st.session_state['df_divergencias'], use_container_width=True, hide_index=True)
         
         st.markdown("---")
@@ -373,16 +405,15 @@ if st.session_state['confirmado']:
 
         st.divider()
         
-        # --- ETAPA 2: AUDITORIA CRUZADA (NOVO MÓDULO) ---
+        # --- ETAPA 2: AUDITORIA CRUZADA ---
         with st.expander("🕵️ ETAPA 2: CRUZAR COM RELATÓRIO DE AUTENTICIDADE (EXCEL)", expanded=True):
-            st.info("Já tem o relatório de autenticidade? Suba ele aqui para verificar se alguma nota autorizada acima foi cancelada posteriormente.")
+            st.info("Suba aqui o relatório Excel para verificar se alguma nota autorizada acima foi cancelada posteriormente.")
             auth_file = st.file_uploader("Selecione o arquivo Excel (.xlsx)", type=["xlsx", "xls"], key="auth_uploader_2")
             
             if auth_file and st.button("🔍 VERIFICAR DIVERGÊNCIAS"):
                 try:
                     auth_dict = {}
                     df_auth = pd.read_excel(auth_file)
-                    # Assume A=Chave (idx 0), F=Status (idx 5)
                     for index, row in df_auth.iterrows():
                         chave_auth = str(row.iloc[0]).strip()
                         status_auth = str(row.iloc[5]).strip().upper()
@@ -390,12 +421,9 @@ if st.session_state['confirmado']:
                             auth_dict[chave_auth] = status_auth
                     
                     divergencia_list = []
-                    # Varre a lista de XMLs processados (cache)
                     for res in st.session_state['relatorio']:
-                        # Só interessa cruzar se o XML diz que está NORMAL/AUTORIZADA
                         if res["Status"] == "NORMAIS" and res["Chave"] in auth_dict:
                             status_excel = auth_dict[res["Chave"]]
-                            # Se Excel diz CANCELADA, temos uma divergência
                             if "CANCEL" in status_excel:
                                 divergencia_list.append({
                                     "Chave": res["Chave"],
@@ -413,10 +441,11 @@ if st.session_state['confirmado']:
                 except Exception as e:
                     st.error(f"Erro ao processar Excel: {e}")
 
-        # --- GERAÇÃO DO EXCEL FINAL (COM TODAS AS ABAS) ---
+        # --- GERAÇÃO DO EXCEL FINAL (COM GERAL COMPLETO E CHAVES CANCELADAS) ---
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
             st.session_state['df_resumo'].to_excel(writer, sheet_name='Resumo', index=False)
+            st.session_state['df_geral'].to_excel(writer, sheet_name='Geral_Completo', index=False) # NOVA ABA
             st.session_state['df_faltantes'].to_excel(writer, sheet_name='Buracos', index=False)
             st.session_state['df_canceladas'].to_excel(writer, sheet_name='Canceladas', index=False)
             st.session_state['df_inutilizadas'].to_excel(writer, sheet_name='Inutilizadas', index=False)
