@@ -93,7 +93,7 @@ def aplicar_estilo_premium():
 
 aplicar_estilo_premium()
 
-# --- MOTOR DE IDENTIFICAÇÃO ---
+# --- MOTOR DE IDENTIFICAÇÃO (MANTIDO) ---
 def identify_xml_info(content_bytes, client_cnpj, file_name):
     client_cnpj_clean = "".join(filter(str.isdigit, str(client_cnpj))) if client_cnpj else ""
     nome_puro = os.path.basename(file_name)
@@ -111,7 +111,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<inut' not in tag_l and '<retinut' not in tag_l: return None, False
         
-        # 1. INUTILIZADAS
+        # 1. IDENTIFICAÇÃO DE INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
             if '<mod>65</mod>' in tag_l: resumo["Tipo"] = "NFC-e"
@@ -202,11 +202,9 @@ with st.container():
         <div class="instrucoes-card">
             <h3>📖 Instruções de Uso</h3>
     <ul>
-        <li><b>Fonte de Dados:</b> O sistema aceita arquivos <b>XML</b> individuais ou pacotes <b>ZIP</b>. </li>
-        <li><b>Identificação Fiscal:</b> A Série e o Número são extraídos diretamente da <b>Chave de Acesso (44 dígitos)</b>. Isso garante que, em eventos de cancelamento, o número lido seja o da nota de referência e não o do protocolo.</li>
-        <li><b>Critério de Saída (Emitidos):</b> Documentos onde o CNPJ do emitente coincide com o CNPJ configurado são classificados como <b>EMITIDOS</b>.</li>
-        <li><b>Critério de Entrada (Terceiros):</b> Documentos de outros emitentes destinados ao CNPJ configurado são classificados como <b>RECEBIDOS</b>.</li>
-        <li><b>Regra de Prevalência:</b> Se o lote contiver a nota autorizada e o seu respectivo cancelamento, o sistema prioriza o status <b>CANCELADO</b> para a auditoria.</li>
+        <li><b>Etapa 1:</b> Suba os XMLs para obter o raio-x inicial e achar buracos.</li>
+        <li><b>Etapa 2 (Novo):</b> Suba o relatório Excel de Autenticidade para validar o status real (Cancelada/Autorizada).</li>
+        <li><b>Prevalência:</b> O status do relatório Excel prevalece sobre o XML em caso de divergência.</li>
     </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -217,9 +215,7 @@ with st.container():
             <ul>
                 <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
                 <li><b>Divisão Cronológica:</b> Pastas separadas por Ano e Mês.</li>
-                <li><b>Hierarquia Fiscal:</b> Separação por Emitente e Status.</li>
-                <li><b>Peneira Lado a Lado:</b> Auditoria de buracos, notas canceladas, inutilizadas e autorizadas.</li>
-                <li><b>[NOVO] Auditoria de Autenticidade:</b> Comparação com relatório Excel externo.</li>
+                <li><b>Auditoria Cruzada:</b> Validação final de notas Canceladas vs Autorizadas via Excel oficial.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -246,36 +242,15 @@ with st.sidebar:
     if st.button("🗑️ RESETAR SISTEMA"):
         st.session_state.clear(); st.rerun()
 
-# --- LÓGICA DE EXECUÇÃO CORRIGIDA (CORREÇÃO DO BUG) ---
 if st.session_state['confirmado']:
     
-    # SE AINDA NÃO PROCESSOU, MOSTRA UPLOAD
+    # 1. TELA INICIAL (ETAPA 1 - SÓ XML)
     if not st.session_state['garimpo_ok']:
-        col_up1, col_up2 = st.columns(2)
-        with col_up1:
-            uploaded_files = st.file_uploader("1. ARQUIVOS XML/ZIP (Obrigatório)", accept_multiple_files=True, key="xml_uploader")
-        with col_up2:
-            auth_file = st.file_uploader("2. RELATÓRIO AUTENTICIDADE (Opcional - Excel)", type=["xlsx", "xls"], key="auth_uploader")
-
-        if uploaded_files and st.button("🚀 INICIAR GRANDE GARIMPO"):
+        uploaded_files = st.file_uploader("📂 1. ARQUIVOS XML/ZIP (Etapa Obrigatória)", accept_multiple_files=True)
+        
+        if uploaded_files and st.button("🚀 INICIAR GARIMPO (ETAPA 1)"):
             lote_dict = {}
             buf_org, buf_todos = io.BytesIO(), io.BytesIO()
-            
-            # --- PREPARAÇÃO DO DICIONÁRIO DE AUTENTICIDADE ---
-            auth_dict = {}
-            if auth_file:
-                try:
-                    df_auth = pd.read_excel(auth_file)
-                    # Assume Coluna A = Chave, Coluna F = Status (índices 0 e 5)
-                    # Limpa chave e normaliza status
-                    for index, row in df_auth.iterrows():
-                        chave_auth = str(row.iloc[0]).strip()
-                        status_auth = str(row.iloc[5]).strip().upper()
-                        if len(chave_auth) == 44:
-                            auth_dict[chave_auth] = status_auth
-                except Exception as e:
-                    st.error(f"Erro ao ler arquivo de autenticidade: {e}")
-
             progresso_bar = st.progress(0)
             status_text = st.empty()
             total_arquivos = len(uploaded_files)
@@ -286,7 +261,6 @@ if st.session_state['confirmado']:
                     
                     for i, f in enumerate(uploaded_files):
                         if i % 50 == 0: gc.collect()
-                        
                         if total_arquivos > 0 and i % max(1, int(total_arquivos * 0.02)) == 0:
                             progresso_bar.progress((i + 1) / total_arquivos)
                             status_text.text(f"⛏️ Processando arquivo {i+1}/{total_arquivos}: {f.name}")
@@ -309,38 +283,17 @@ if st.session_state['confirmado']:
                             del todos_xmls
                         except: continue
                 
-                status_box.update(label="✅ Concluído!", state="complete", expanded=False)
+                status_box.update(label="✅ Etapa 1 Concluída!", state="complete", expanded=False)
                 progresso_bar.empty(); status_text.empty()
 
-            rel_list, audit_map, canc_list, inut_list, aut_list, divergencia_list = [], {}, [], [], [], []
-            
+            rel_list, audit_map, canc_list, inut_list, aut_list = [], {}, [], [], []
             for k, (res, is_p) in lote_dict.items():
                 rel_list.append(res)
                 if is_p:
-                    # --- VERIFICAÇÃO DE DIVERGÊNCIA COM EXCEL ---
-                    status_xml = res["Status"] # NORMAIS, CANCELADOS, INUTILIZADOS
-                    status_real = status_xml # Assume o do XML por padrão
-                    obs_div = ""
-
-                    if k in auth_dict:
-                        status_excel = auth_dict[k] # Ex: "CANCELADA", "AUTORIZADA"
-                        # Lógica de Divergência: XML diz Normal, Excel diz Cancelada
-                        if status_xml == "NORMAIS" and "CANCEL" in status_excel:
-                            status_real = "CANCELADOS_DIVERGENTE" # Marca interna
-                            divergencia_list.append({
-                                "Chave": k,
-                                "Modelo": res["Tipo"],
-                                "Série": res["Série"],
-                                "Nota": res["Número"],
-                                "Status no XML": "AUTORIZADA",
-                                "Status no Excel": status_excel
-                            })
-                    
-                    # --- AGREGACAO NOS QUADROS ---
                     sk = (res["Tipo"], res["Série"])
                     if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
                     
-                    if status_real == "INUTILIZADOS":
+                    if res["Status"] == "INUTILIZADOS":
                         r = res.get("Range", (res["Número"], res["Número"]))
                         for n in range(r[0], r[1] + 1):
                             audit_map[sk]["nums"].add(n)
@@ -348,13 +301,10 @@ if st.session_state['confirmado']:
                     else:
                         if res["Número"] > 0:
                             audit_map[sk]["nums"].add(res["Número"])
-                            
-                            # Se for cancelada no XML OU cancelada apenas no Excel (divergente)
-                            if status_real == "CANCELADOS" or status_real == "CANCELADOS_DIVERGENTE":
-                                canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Obs": "Via Excel" if status_real == "CANCELADOS_DIVERGENTE" else "Via XML"})
-                            elif status_real == "NORMAIS":
+                            if res["Status"] == "CANCELADOS":
+                                canc_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"]})
+                            elif res["Status"] == "NORMAIS":
                                 aut_list.append({"Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Valor": res["Valor"], "Chave": res["Chave"]})
-                            
                             audit_map[sk]["valor"] += res["Valor"]
 
             res_final, fal_final = [], []
@@ -376,27 +326,28 @@ if st.session_state['confirmado']:
                 'df_canceladas': pd.DataFrame(canc_list), 
                 'df_inutilizadas': pd.DataFrame(inut_list), 
                 'df_autorizadas': pd.DataFrame(aut_list),
-                'df_divergencias': pd.DataFrame(divergencia_list),
+                'df_divergencias': pd.DataFrame(),
                 'st_counts': st_counts, 
                 'garimpo_ok': True
             })
             st.rerun()
 
-    # SE JÁ PROCESSOU, MOSTRA RESULTADOS (ELSE DO PRIMEIRO IF)
+    # 2. TELA DE RESULTADOS + ETAPA 2 (APÓS O GARIMPO INICIAL)
     else: 
         sc = st.session_state['st_counts']
         c1, c2, c3 = st.columns(3)
-        c1.metric("📦 VOLUME TOTAL", len(st.session_state['relatorio']))
-        c2.metric("❌ CANCELADAS", sc.get("CANCELADOS", 0))
+        c1.metric("📦 AUTORIZADAS (XML)", sc.get("AUTORIZADAS", 0))
+        c2.metric("❌ CANCELADAS (XML)", sc.get("CANCELADOS", 0))
         c3.metric("🚫 INUTILIZADAS", sc.get("INUTILIZADOS", 0))
         
         st.markdown("### 📊 RESUMO POR SÉRIE")
         st.dataframe(st.session_state['df_resumo'], use_container_width=True, hide_index=True)
         
-        # --- QUADRO DE DIVERGÊNCIAS (NOVO) ---
+        # --- QUADRO DE DIVERGÊNCIAS (APARECE SÓ SE HOUVER DIVERGENCIA APÓS ETAPA 2) ---
         if not st.session_state['df_divergencias'].empty:
+            st.markdown("---")
             st.markdown("### 🚨 DIVERGÊNCIAS DE STATUS (XML vs EXCEL)")
-            st.warning("Atenção: As notas abaixo constam como AUTORIZADAS nos XMLs, mas CANCELADAS no relatório de autenticidade.")
+            st.error(f"Foram encontradas {len(st.session_state['df_divergencias'])} notas que constam como AUTORIZADAS no XML, mas estão CANCELADAS no relatório de autenticidade.")
             st.dataframe(st.session_state['df_divergencias'], use_container_width=True, hide_index=True)
         
         st.markdown("---")
@@ -416,7 +367,47 @@ if st.session_state['confirmado']:
 
         st.divider()
         
-        # --- GERAÇÃO DO EXCEL COM ABA DIVERGENCIAS ---
+        # --- MÓDULO DA ETAPA 2 (APARECE NO FINAL) ---
+        with st.expander("🕵️ ETAPA 2: CRUZAR COM RELATÓRIO DE AUTENTICIDADE (EXCEL)", expanded=True):
+            st.info("Já tem o relatório de autenticidade? Suba ele aqui para verificar se alguma nota autorizada acima foi cancelada posteriormente.")
+            auth_file = st.file_uploader("Selecione o arquivo Excel (.xlsx)", type=["xlsx", "xls"], key="auth_uploader_2")
+            
+            if auth_file and st.button("🔍 VERIFICAR DIVERGÊNCIAS"):
+                try:
+                    auth_dict = {}
+                    df_auth = pd.read_excel(auth_file)
+                    # Assume A=Chave (idx 0), F=Status (idx 5)
+                    for index, row in df_auth.iterrows():
+                        chave_auth = str(row.iloc[0]).strip()
+                        status_auth = str(row.iloc[5]).strip().upper()
+                        if len(chave_auth) == 44:
+                            auth_dict[chave_auth] = status_auth
+                    
+                    divergencia_list = []
+                    # Varre a lista de XMLs processados (cache)
+                    for res in st.session_state['relatorio']:
+                        # Só interessa cruzar se o XML diz que está NORMAL/AUTORIZADA
+                        if res["Status"] == "NORMAIS" and res["Chave"] in auth_dict:
+                            status_excel = auth_dict[res["Chave"]]
+                            # Se Excel diz CANCELADA, temos uma divergência
+                            if "CANCEL" in status_excel:
+                                divergencia_list.append({
+                                    "Chave": res["Chave"],
+                                    "Modelo": res["Tipo"],
+                                    "Série": res["Série"],
+                                    "Nota": res["Número"],
+                                    "Status no XML": "AUTORIZADA",
+                                    "Status no Excel": status_excel
+                                })
+                    
+                    st.session_state['df_divergencias'] = pd.DataFrame(divergencia_list)
+                    st.success("Verificação concluída! Confira o quadro de divergências que apareceu acima.")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Erro ao processar Excel: {e}")
+
+        # --- GERAÇÃO DO EXCEL FINAL ---
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
             st.session_state['df_resumo'].to_excel(writer, sheet_name='Resumo', index=False)
@@ -430,7 +421,7 @@ if st.session_state['confirmado']:
         col1, col2, col3 = st.columns(3)
         with col1: st.download_button("📂 BAIXAR ORGANIZADO (ZIP)", st.session_state['z_org'], "garimpo_organizado.zip", use_container_width=True)
         with col2: st.download_button("📦 BAIXAR TODOS (SÓ XML)", st.session_state['z_todos'], "todos_xml.zip", use_container_width=True)
-        with col3: st.download_button("📊 RELATÓRIO EXCEL", buffer_excel.getvalue(), "relatorio_auditoria.xlsx", use_container_width=True, mime="application/vnd.ms-excel")
+        with col3: st.download_button("📊 RELATÓRIO EXCEL COMPLETO", buffer_excel.getvalue(), "relatorio_auditoria_completo.xlsx", use_container_width=True, mime="application/vnd.ms-excel")
         
         if st.button("⛏️ NOVO GARIMPO"):
             st.session_state.clear(); st.rerun()
