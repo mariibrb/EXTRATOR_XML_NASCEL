@@ -104,7 +104,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         "Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0",
         "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS",
         "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00",
-        "Fluxo": "SAIDA"  # Padrão
+        "Operacao": "SAIDA" 
     }
     
     try:
@@ -115,7 +115,7 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         # Identificação de tpNF (0=Entrada, 1=Saída)
         tp_nf_match = re.search(r'<tpnf>([01])</tpnf>', tag_l)
         if tp_nf_match:
-            resumo["Fluxo"] = "ENTRADA" if tp_nf_match.group(1) == "0" else "SAIDA"
+            resumo["Operacao"] = "ENTRADA" if tp_nf_match.group(1) == "0" else "SAIDA"
 
         # 1. IDENTIFICAÇÃO DE INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
@@ -170,11 +170,10 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         
         is_p = (cnpj_emit == client_cnpj_clean)
         
-        # Estrutura de pastas respeitando Fluxo (tpNF)
         if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Fluxo']}/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Operacao']}/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
         else:
-            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Fluxo']}/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
+            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Operacao']}/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
             
         return resumo, is_p
     except: return None, False
@@ -295,7 +294,7 @@ if st.session_state['confirmado']:
                 rel_list.append(res)
                 
                 # LISTA GERAL
-                origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
+                origem_txt = f"EMISSÃO PRÓPRIA ({res['Operacao']})" if is_p else f"TERCEIROS ({res['Operacao']})"
                 if res["Status"] == "INUTILIZADOS":
                     r = res.get("Range", (res["Número"], res["Número"]))
                     for n in range(r[0], r[1] + 1):
@@ -377,7 +376,7 @@ if st.session_state['confirmado']:
                     
                     audit_map, canc_list, inut_list, aut_list, geral_list = {}, [], [], [], []
                     for k, (res, is_p) in lote_recalc.items():
-                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
+                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Operacao']})" if is_p else f"TERCEIROS ({res['Operacao']})"
                         if res["Status"] == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
@@ -493,7 +492,7 @@ if st.session_state['confirmado']:
                                 if res["Status"] == "NORMAIS":
                                     div_list.append({"Chave": res["Chave"], "Nota": res["Número"], "Status XML": "AUTORIZADA", "Status Real": "CANCELADA"})
 
-                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
+                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Operacao']})" if is_p else f"TERCEIROS ({res['Operacao']})"
                         if status_final == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
