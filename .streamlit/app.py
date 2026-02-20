@@ -213,29 +213,32 @@ with st.container():
     with m_col1:
         st.markdown("""
         <div class="instrucoes-card">
-            <h3>📖 Instruções de Uso</h3>
-    <ul>
-        <li><b>Etapa 1:</b> Suba os XMLs para obter o raio-x inicial e achar buracos.</li>
-        <li><b>Adicionar Arquivos:</b> Use a barra de adição abaixo dos resultados para incluir arquivos sem resetar.</li>
-        <li><b>Etapa 2:</b> Suba o relatório Excel de Autenticidade para validar o status real.</li>
-    </ul>
+            <h3>📖 Como usar o sistema (Passo a Passo)</h3>
+            <ol>
+                <li><b>Identificar a Empresa:</b> No menu branco à esquerda, escreva o CNPJ do seu cliente e clique no botão para liberar o sistema.</li>
+                <li><b>Enviar as Notas:</b> No meio da tela, arraste a sua pasta de notas (pode ser em formato ZIP ou as notas XML soltas).</li>
+                <li><b>Analisar:</b> Clique no botão "Iniciar Grande Garimpo" e aguarde o fim da barra de progresso.</li>
+                <li><b>Conferir com o Governo:</b> Na Etapa 2 (final da página), envie a Planilha de Autenticidade da SEFAZ e clique em "Validar e Atualizar".</li>
+                <li><b>Guardar Resultados:</b> Use os botões coloridos para descarregar o Relatório Master e as notas organizadas.</li>
+            </ol>
         </div>
         """, unsafe_allow_html=True)
     with m_col2:
         st.markdown("""
         <div class="instrucoes-card">
-            <h3>📊 O que será obtido?</h3>
+            <h3>📊 O que o sistema faz por si</h3>
             <ul>
-                <li><b>Garimpo Profundo:</b> Abre recursivamente ZIP dentro de ZIP.</li>
-                <li><b>Relatório Master:</b> Planilha Excel com todos os dados de Emitente e Destinatário.</li>
-                <li><b>Auditoria Cruzada:</b> Validação final com Excel externo.</li>
+                <li><b>Acha Notas Perdidas:</b> Identifica automaticamente saltos na numeração (ex: se falta a nota 5 entre a 4 e a 6).</li>
+                <li><b>Limpa Cancelamentos:</b> Detecta notas canceladas e as retira do valor total de faturamento.</li>
+                <li><b>Arruma a Casa:</b> Organiza tudo em pastas por Ano/Mês e renomeia os arquivos para fácil leitura.</li>
+                <li><b>Auditoria Cruzada:</b> Confronta o status do seu arquivo físico com o que consta no site da SEFAZ.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_geral', 'df_divergencias', 'st_counts', 'dict_arquivos']
+keys_to_init = ['garimpo_ok', 'confirmado', 'z_org', 'z_todos', 'relatorio', 'df_resumo', 'df_faltantes', 'df_canceladas', 'df_inutilizadas', 'df_autorizadas', 'df_geral', 'df_divergencias', 'st_counts', 'dict_arquivos', 'validation_done']
 for k in keys_to_init:
     if k not in st.session_state:
         if 'df' in k: st.session_state[k] = pd.DataFrame()
@@ -307,7 +310,6 @@ if st.session_state['confirmado']:
                 rel_list.append(res)
                 origem_label = f"EMISSÃO PRÓPRIA ({res['Operacao']})" if is_p else f"TERCEIROS ({res['Operacao']})"
                 
-                # BASE DO REGISTRO PARA PLANILHAS DETALHADAS
                 registro_base = {
                     "Origem": origem_label, "Operação": res["Operacao"], "Modelo": res["Tipo"], 
                     "Série": res["Série"], "Nota": res["Número"], "Data Emissão": res["Data_Emissao"],
@@ -374,23 +376,56 @@ if st.session_state['confirmado']:
         
         st.markdown("---")
         col_audit, col_canc, col_inut = st.columns(3)
+        
         with col_audit:
             st.markdown("### ⚠️ BURACOS")
-            if not st.session_state['df_faltantes'].empty: st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
-            else: st.info("✅ Tudo em ordem.")
+            if not st.session_state['df_faltantes'].empty:
+                st.dataframe(st.session_state['df_faltantes'], use_container_width=True, hide_index=True)
+            else:
+                st.info("✅ Tudo em ordem.")
+                
         with col_canc:
             st.markdown("### ❌ CANCELADAS")
-            if not st.session_state['df_canceladas'].empty: st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
-            else: st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_canceladas'].empty:
+                st.dataframe(st.session_state['df_canceladas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Nenhuma nota.")
+                
         with col_inut:
             st.markdown("### 🚫 INUTILIZADAS")
-            if not st.session_state['df_inutilizadas'].empty: st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
-            else: st.info("ℹ️ Nenhuma nota.")
+            if not st.session_state['df_inutilizadas'].empty:
+                st.dataframe(st.session_state['df_inutilizadas'], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Nenhuma nota.")
 
         st.divider()
         
         # --- ETAPA 2: VALIDAÇÃO ---
         st.markdown("### 🕵️ ETAPA 2: VALIDAR COM RELATÓRIO DE AUTENTICIDADE")
+        
+        # --- PAINEL CORPORATIVO MOVIDO PARA CÁ (LOG LOGO ACIMA DO UPLOAD) ---
+        if st.session_state.get('validation_done'):
+            n_divergencias = len(st.session_state['df_divergencias'])
+            if n_divergencias > 0:
+                st.markdown(f"""
+                <div style="background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; border-radius: 5px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h4 style="color: #856404; margin: 0; font-family: 'Montserrat', sans-serif;">⚠️ STATUS DA AUDITORIA SEFAZ: CONCLUÍDA COM RESSALVAS</h4>
+                    <p style="color: #856404; margin: 5px 0 0 0; font-family: 'Plus Jakarta Sans', sans-serif;">
+                        Foram identificadas <b>{n_divergencias} divergências</b> entre os XMLs físicos e o status real na SEFAZ. 
+                        Os dados foram corrigidos automaticamente. Verifique a aba "Divergencias" no Relatório Excel Master para detalhes.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="background-color: #d4edda; border-left: 5px solid #28a745; padding: 15px; border-radius: 5px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h4 style="color: #155724; margin: 0; font-family: 'Montserrat', sans-serif;">✅ STATUS DA AUDITORIA SEFAZ: CONCLUÍDA COM SUCESSO</h4>
+                    <p style="color: #155724; margin: 5px 0 0 0; font-family: 'Plus Jakarta Sans', sans-serif;">
+                        O status de todos os arquivos físicos (XML) está 100% alinhado com o relatório de autenticidade da SEFAZ. Nenhuma divergência encontrada.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
         with st.expander("Clique aqui para subir o Excel e atualizar o status real"):
             auth_file = st.file_uploader("Suba o Excel (.xlsx) [Col A=Chave, Col F=Status]", type=["xlsx", "xls"], key="auth_up")
             if auth_file and st.button("🔄 VALIDAR E ATUALIZAR"):
@@ -443,8 +478,10 @@ if st.session_state['confirmado']:
                             else:
                                 if res["Número"] > 0:
                                     audit_map[sk]["nums"].add(res["Número"])
-                                    if status_final == "CANCELADOS": canc_list.append(registro_detalhado)
-                                    elif status_final == "NORMAIS": aut_list.append(registro_detalhado)
+                                    if status_final == "CANCELADOS":
+                                        canc_list.append(registro_detalhado)
+                                    elif status_final == "NORMAIS":
+                                        aut_list.append(registro_detalhado)
                                     audit_map[sk]["valor"] += res["Valor"]
 
                     res_final, fal_final = [], []
@@ -460,7 +497,8 @@ if st.session_state['confirmado']:
                         'df_canceladas': pd.DataFrame(canc_list), 'df_autorizadas': pd.DataFrame(aut_list),
                         'df_inutilizadas': pd.DataFrame(inut_list), 'df_geral': pd.DataFrame(geral_list),
                         'df_resumo': pd.DataFrame(res_final), 'df_faltantes': pd.DataFrame(fal_final),
-                        'df_divergencias': pd.DataFrame(div_list), 'st_counts': {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list), "AUTORIZADAS": len(aut_list)}
+                        'df_divergencias': pd.DataFrame(div_list), 'st_counts': {"CANCELADOS": len(canc_list), "INUTILIZADOS": len(inut_list), "AUTORIZADAS": len(aut_list)},
+                        'validation_done': True # Ativa o painel fixo
                     })
                     st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
@@ -483,7 +521,6 @@ if st.session_state['confirmado']:
                                     st.session_state['dict_arquivos'][f"{res['Pasta']}/{name}"] = xml_data
                         except: continue
                     
-                    # RECALCULO COMPLETO PARA MANTER INTEGRIDADE DOS BURACOS
                     lote_recalc = {}
                     for item in st.session_state['relatorio']:
                         key = item["Chave"]
@@ -507,9 +544,7 @@ if st.session_state['confirmado']:
                         if res["Status"] == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
-                                item_inut = registro_detalhado.copy()
-                                item_inut.update({"Nota": n, "Status Final": "INUTILIZADA", "Valor": 0.0})
-                                geral_list.append(item_inut)
+                                item_inut = registro_detalhado.copy(); item_inut.update({"Nota": n, "Status Final": "INUTILIZADA", "Valor": 0.0}); geral_list.append(item_inut)
                         else:
                             geral_list.append(registro_detalhado)
 
@@ -523,8 +558,10 @@ if st.session_state['confirmado']:
                             else:
                                 if res["Número"] > 0:
                                     audit_map[sk]["nums"].add(res["Número"])
-                                    if res["Status"] == "CANCELADOS": canc_list.append(registro_detalhado)
-                                    elif res["Status"] == "NORMAIS": aut_list.append(registro_detalhado)
+                                    if res["Status"] == "CANCELADOS":
+                                        canc_list.append(registro_detalhado)
+                                    elif res["Status"] == "NORMAIS":
+                                        aut_list.append(registro_detalhado)
                                     audit_map[sk]["valor"] += res["Valor"]
 
                     res_final, fal_final = [], []
