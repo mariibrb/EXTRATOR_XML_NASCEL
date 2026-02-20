@@ -103,7 +103,8 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
     resumo = {
         "Arquivo": nome_puro, "Chave": "", "Tipo": "Outros", "Série": "0",
         "Número": 0, "Status": "NORMAIS", "Pasta": "RECEBIDOS_TERCEIROS/OUTROS",
-        "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00"
+        "Valor": 0.0, "Conteúdo": content_bytes, "Ano": "0000", "Mes": "00",
+        "Fluxo": "SAIDA"  # Padrão
     }
     
     try:
@@ -111,6 +112,11 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         tag_l = content_str.lower()
         if '<?xml' not in tag_l and '<inf' not in tag_l and '<inut' not in tag_l and '<retinut' not in tag_l: return None, False
         
+        # Identificação de tpNF (0=Entrada, 1=Saída)
+        tp_nf_match = re.search(r'<tpnf>([01])</tpnf>', tag_l)
+        if tp_nf_match:
+            resumo["Fluxo"] = "ENTRADA" if tp_nf_match.group(1) == "0" else "SAIDA"
+
         # 1. IDENTIFICAÇÃO DE INUTILIZADAS
         if '<inutnfe' in tag_l or '<retinutnfe' in tag_l or '<procinut' in tag_l:
             resumo["Status"], resumo["Tipo"] = "INUTILIZADOS", "NF-e"
@@ -164,10 +170,11 @@ def identify_xml_info(content_bytes, client_cnpj, file_name):
         
         is_p = (cnpj_emit == client_cnpj_clean)
         
+        # Estrutura de pastas respeitando Fluxo (tpNF)
         if is_p:
-            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
+            resumo["Pasta"] = f"EMITIDOS_CLIENTE/{resumo['Fluxo']}/{resumo['Tipo']}/{resumo['Status']}/{resumo['Ano']}/{resumo['Mes']}/Serie_{resumo['Série']}"
         else:
-            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
+            resumo["Pasta"] = f"RECEBIDOS_TERCEIROS/{resumo['Fluxo']}/{resumo['Tipo']}/{resumo['Ano']}/{resumo['Mes']}"
             
         return resumo, is_p
     except: return None, False
@@ -288,7 +295,7 @@ if st.session_state['confirmado']:
                 rel_list.append(res)
                 
                 # LISTA GERAL
-                origem_txt = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
+                origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
                 if res["Status"] == "INUTILIZADOS":
                     r = res.get("Range", (res["Número"], res["Número"]))
                     for n in range(r[0], r[1] + 1):
@@ -347,10 +354,6 @@ if st.session_state['confirmado']:
             extra_files = st.file_uploader("Adicionar arquivos ao lote atual:", accept_multiple_files=True, key="extra_files")
             if extra_files and st.button("PROCESSAR E ATUALIZAR LISTA"):
                 with st.spinner("Adicionando e recalculando..."):
-                    # 1. Processa novos arquivos e adiciona à lista MESTRA
-                    # Obs: Para reconstruir os ZIPs completos, seria necessário muito processamento.
-                    # Aqui vamos focar em atualizar a ANÁLISE (Excel e Tabelas).
-                    
                     novos_lidos = 0
                     for f in extra_files:
                         try:
@@ -359,15 +362,10 @@ if st.session_state['confirmado']:
                             for name, xml_data in todos_xmls:
                                 res, is_p = identify_xml_info(xml_data, cnpj_limpo, name)
                                 if res:
-                                    # Adiciona à lista mestra se a chave não existir ou se for um status prioritário
-                                    # Simplificação: Adiciona tudo e reprocessa a lógica de dicionário
                                     st.session_state['relatorio'].append(res)
                                     novos_lidos += 1
                         except: continue
                     
-                    # 2. Recalcula TUDO com base na lista atualizada
-                    # (Lógica idêntica ao bloco inicial, mas usando st.session_state['relatorio'])
-                    # Reconstrói lote_dict para garantir unicidade/prioridade
                     lote_recalc = {}
                     for item in st.session_state['relatorio']:
                         key = item["Chave"]
@@ -377,11 +375,9 @@ if st.session_state['confirmado']:
                         else:
                             lote_recalc[key] = (item, is_p)
                     
-                    # Regenera as listas
                     audit_map, canc_list, inut_list, aut_list, geral_list = {}, [], [], [], []
                     for k, (res, is_p) in lote_recalc.items():
-                        # GERAL
-                        origem_txt = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
+                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
                         if res["Status"] == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
@@ -389,7 +385,6 @@ if st.session_state['confirmado']:
                         else:
                             geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status Final": res["Status"], "Valor": res["Valor"]})
 
-                        # AUDITORIA
                         if is_p:
                             sk = (res["Tipo"], res["Série"])
                             if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
@@ -416,7 +411,6 @@ if st.session_state['confirmado']:
                             for b in sorted(list(set(range(n_min, n_max + 1)) - set(ns))):
                                 fal_final.append({"Tipo": t, "Série": s, "Nº Faltante": b})
 
-                    # Atualiza Session
                     st.session_state.update({
                         'df_resumo': pd.DataFrame(res_final), 
                         'df_faltantes': pd.DataFrame(fal_final), 
@@ -477,8 +471,6 @@ if st.session_state['confirmado']:
                         status = str(row.iloc[5]).strip().upper()
                         if len(chave) == 44: auth_dict[chave] = status
                     
-                    # RECALCULO COM VALIDAÇÃO
-                    # Reconstrói lote_dict (para unicidade)
                     lote_recalc = {}
                     for item in st.session_state['relatorio']:
                         key = item["Chave"]
@@ -501,8 +493,7 @@ if st.session_state['confirmado']:
                                 if res["Status"] == "NORMAIS":
                                     div_list.append({"Chave": res["Chave"], "Nota": res["Número"], "Status XML": "AUTORIZADA", "Status Real": "CANCELADA"})
 
-                        # GERAL
-                        origem_txt = "EMISSÃO PRÓPRIA" if is_p else "TERCEIROS"
+                        origem_txt = f"EMISSÃO PRÓPRIA ({res['Fluxo']})" if is_p else f"TERCEIROS ({res['Fluxo']})"
                         if status_final == "INUTILIZADOS":
                             r = res.get("Range", (res["Número"], res["Número"]))
                             for n in range(r[0], r[1] + 1):
@@ -510,7 +501,6 @@ if st.session_state['confirmado']:
                         else:
                             geral_list.append({"Origem": origem_txt, "Modelo": res["Tipo"], "Série": res["Série"], "Nota": res["Número"], "Chave": res["Chave"], "Status Final": status_final, "Valor": res["Valor"]})
 
-                        # AUDITORIA
                         if is_p:
                             sk = (res["Tipo"], res["Série"])
                             if sk not in audit_map: audit_map[sk] = {"nums": set(), "valor": 0.0}
